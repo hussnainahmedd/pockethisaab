@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Linking, Modal, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { C, s } from '../../components/theme';
-import { Card, EmptyState, PrimaryButton, GhostButton, StatTile } from '../../components/ui';
+import { Card, EmptyState, PrimaryButton, GhostButton, HeroCard, StatTile } from '../../components/ui';
 import { getDashboardSummary, getRecentActivity, type ActivityItem, type DashboardSummary } from '../../lib/db';
 import { formatRs, formatSignedRs, prettyDate } from '../../lib/format';
 import {
@@ -78,50 +79,46 @@ export default function Home() {
     }
   };
 
+  const balance = summary?.balance ?? 0;
+
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
       <ScrollView
         contentContainerStyle={s.scroll}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.emerald} />}
       >
-        <Text style={s.h1}>PocketHisaab</Text>
-        <Text style={s.sub}>Your money, your udhaar — all in one place.</Text>
+        <Text style={s.eyebrow}>paisa, sorted ✦</Text>
+        <Text style={[s.h1, { marginTop: 4 }]}>PocketHisaab</Text>
 
         {/* Balance hero */}
-        <Card style={{ marginTop: 18, backgroundColor: C.navy, borderColor: C.navy }}>
-          <Text style={{ color: '#9FC4B8', fontSize: 13, fontWeight: '600' }}>TOTAL BALANCE</Text>
-          <Text
-            style={{
-              color: (summary?.balance ?? 0) < 0 ? '#FF9B9E' : '#fff',
-              fontSize: 38,
-              fontWeight: '800',
-              marginTop: 6,
-              fontVariant: ['tabular-nums'],
-            }}
-          >
-            {formatSignedRs(summary?.balance ?? 0)}
-          </Text>
-          <Text style={{ color: '#9FC4B8', fontSize: 12.5, marginTop: 8 }}>
-            Pocket money in, minus what you spent, lent out and owe.
-          </Text>
-        </Card>
+        <HeroCard
+          eyebrow="total balance"
+          value={formatSignedRs(balance)}
+          valueColor={balance < 0 ? '#FDA4AF' : '#fff'}
+          sub="Pocket money in, minus what you spent, lent out and owe."
+        />
 
         {/* Stats grid */}
-        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
-          <StatTile label="Spent (this month)" value={formatRs(summary?.monthExpenses ?? 0)} tone="red" />
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+          <StatTile label="Spent · this month" value={formatRs(summary?.monthExpenses ?? 0)} tone="red" />
           <StatTile label="They owe you" value={formatRs(summary?.totalLent ?? 0)} tone="amber" />
         </View>
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-          <StatTile label="You owe" value={formatRs(summary?.totalBorrowed ?? 0)} tone="red" />
-          <StatTile label="Money in (total)" value={formatRs(summary?.totalIncome ?? 0)} tone="green" />
+          <StatTile label="You owe" value={formatRs(summary?.totalBorrowed ?? 0)} tone="violet" />
+          <StatTile
+            label="Money in · total"
+            value={formatRs(summary?.totalIncome ?? 0)}
+            tone="sky"
+            onPress={() => router.push('/income-list')}
+          />
         </View>
 
         {/* Quick add */}
-        <Text style={s.sectionTitle}>Quick add</Text>
+        <Text style={s.sectionTitle}>Quick add ⚡</Text>
         <View style={{ flexDirection: 'row', gap: 10 }}>
-          <QuickAction emoji="💸" label="Expense" onPress={() => router.push('/add-expense')} />
-          <QuickAction emoji="💰" label="Pocket money" onPress={() => router.push('/add-income')} />
-          <QuickAction emoji="🤝" label="Udhaar" onPress={() => router.push('/add-udhaar')} />
+          <QuickAction emoji="💸" label="Expense" colors={['#F43F5E', '#E11D48']} onPress={() => router.push('/add-expense')} />
+          <QuickAction emoji="💰" label="Pocket money" colors={['#0E9F6E', '#14B8A6']} onPress={() => router.push('/add-income')} />
+          <QuickAction emoji="🤝" label="Udhaar" colors={['#8B5CF6', '#6D28D9']} onPress={() => router.push('/add-udhaar')} />
         </View>
 
         {/* Recent activity */}
@@ -130,10 +127,10 @@ export default function Home() {
           <Card>
             <EmptyState
               emoji="🌱"
-              title="Nothing here yet"
+              title="Nothing here yet — let's fix that"
               body={
                 isFresh
-                  ? 'Add your first pocket money, log an expense, or record an udhaar to get started.'
+                  ? 'Add your first pocket money, log an expense, or record an udhaar to get the ball rolling.'
                   : 'No recent activity.'
               }
             />
@@ -147,33 +144,33 @@ export default function Home() {
                   key={`${a.kind}-${a.id}`}
                   style={[
                     s.row,
-                    { paddingVertical: 11, borderBottomWidth: i === activity.length - 1 ? 0 : 1, borderBottomColor: C.line },
+                    { paddingVertical: 12, borderBottomWidth: i === activity.length - 1 ? 0 : 1, borderBottomColor: C.line },
                   ]}
                 >
                   <View
                     style={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: 12,
+                      width: 44,
+                      height: 44,
+                      borderRadius: 16,
                       backgroundColor: meta.tint,
                       alignItems: 'center',
                       justifyContent: 'center',
-                      marginRight: 12,
+                      marginRight: 13,
                     }}
                   >
-                    <Text style={{ fontSize: 19 }}>{meta.emoji}</Text>
+                    <Text style={{ fontSize: 20 }}>{meta.emoji}</Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14.5, fontWeight: '700', color: C.ink }}>{a.label}</Text>
-                    <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '800', color: C.ink, letterSpacing: -0.2 }}>{a.label}</Text>
+                    <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 3 }}>
                       {a.sublabel} · {prettyDate(a.date)}
                     </Text>
                   </View>
                   <Text
                     style={{
-                      fontSize: 14.5,
-                      fontWeight: '800',
-                      color: a.kind === 'income' ? C.emeraldDark : a.kind === 'expense' ? C.red : C.amber,
+                      fontSize: 15,
+                      fontWeight: '900',
+                      color: a.kind === 'income' ? C.emeraldDark : a.kind === 'expense' ? C.redDark : C.amberDark,
                       fontVariant: ['tabular-nums'],
                     }}
                   >
@@ -186,35 +183,35 @@ export default function Home() {
           </Card>
         )}
 
-        <Link href="/(tabs)/stats" style={{ marginTop: 18, textAlign: 'center', color: C.emeraldDark, fontWeight: '700', fontSize: 14 }}>
+        <Link href="/(tabs)/stats" style={{ marginTop: 20, textAlign: 'center', color: C.emeraldDark, fontWeight: '800', fontSize: 14.5 }}>
           View monthly stats →
         </Link>
       </ScrollView>
 
       {/* Update available modal */}
       <Modal visible={update !== null} transparent animationType="fade" onRequestClose={() => handleUpdateAction(false)}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(15,30,27,0.5)', justifyContent: 'flex-end' }}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(10,31,22,0.55)', justifyContent: 'flex-end' }}>
           <View
             style={{
               backgroundColor: C.card,
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              padding: 22,
-              paddingBottom: 34,
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              padding: 24,
+              paddingBottom: 38,
             }}
           >
-            <Text style={{ fontSize: 40, textAlign: 'center' }}>🎉</Text>
-            <Text style={[s.h2, { textAlign: 'center', marginTop: 8, fontSize: 20 }]}>
+            <Text style={{ fontSize: 42, textAlign: 'center' }}>🎉</Text>
+            <Text style={[s.h2, { textAlign: 'center', marginTop: 10, fontSize: 21 }]}>
               Update available
             </Text>
             <Text style={[s.sub, { textAlign: 'center', marginTop: 8 }]}>
               PocketHisaab v{update?.latestVersion} is out. {update?.message}
             </Text>
-            <View style={{ marginTop: 18, gap: 10 }}>
+            <View style={{ marginTop: 20, gap: 10 }}>
               <PrimaryButton title="Update now" onPress={() => handleUpdateAction(true)} />
               <GhostButton title="Later" onPress={() => handleUpdateAction(false)} />
             </View>
-            <Text style={{ textAlign: 'center', color: C.inkFaint, fontSize: 12, marginTop: 12 }}>
+            <Text style={{ textAlign: 'center', color: C.inkFaint, fontSize: 12, marginTop: 14 }}>
               The new APK will download — open it to install.
             </Text>
           </View>
@@ -224,25 +221,40 @@ export default function Home() {
   );
 }
 
-function QuickAction({ emoji, label, onPress }: { emoji: string; label: string; onPress: () => void }) {
+function QuickAction({
+  emoji,
+  label,
+  colors,
+  onPress,
+}: {
+  emoji: string;
+  label: string;
+  colors: [string, string];
+  onPress: () => void;
+}) {
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        {
-          flex: 1,
-          backgroundColor: '#fff',
-          borderRadius: 14,
-          borderWidth: 1,
-          borderColor: C.line,
-          paddingVertical: 14,
-          alignItems: 'center',
-          opacity: pressed ? 0.7 : 1,
-        },
-      ]}
+      style={({ pressed }) => [{ flex: 1, opacity: pressed ? 0.8 : 1, transform: [{ scale: pressed ? 0.97 : 1 }] }]}
     >
-      <Text style={{ fontSize: 24 }}>{emoji}</Text>
-      <Text style={{ fontSize: 12.5, fontWeight: '700', color: C.ink, marginTop: 6 }}>{label}</Text>
+      <LinearGradient
+        colors={colors}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={{
+          borderRadius: 20,
+          paddingVertical: 18,
+          alignItems: 'center',
+          shadowColor: colors[0],
+          shadowOpacity: 0.4,
+          shadowRadius: 12,
+          shadowOffset: { width: 0, height: 6 },
+          elevation: 5,
+        }}
+      >
+        <Text style={{ fontSize: 26 }}>{emoji}</Text>
+        <Text style={{ fontSize: 12.5, fontWeight: '800', color: '#fff', marginTop: 8 }}>{label}</Text>
+      </LinearGradient>
     </Pressable>
   );
 }
