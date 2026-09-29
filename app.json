@@ -1,1 +1,31 @@
-{"expo":{"experiments":{"typedRoutes":true},"name":"PocketHisaab","newArchEnabled":true,"orientation":"portrait","plugins":["expo-router","expo-status-bar"],"scheme":"pockethisaab","slug":"pockethisaab","userInterfaceStyle":"light","version":"1.0.0","web":{"bundler":"metro"}}}
+{
+  "expo": {
+    "experiments": {
+      "typedRoutes": true
+    },
+    "name": "PocketHisaab",
+    "newArchEnabled": true,
+    "orientation": "portrait",
+    "plugins": [
+      "expo-router",
+      "expo-status-bar"
+    ],
+    "scheme": "pockethisaab",
+    "slug": "pockethisaab",
+    "userInterfaceStyle": "light",
+    "version": "1.0.0",
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b7fe4333-4e2b-4fac-b7ea-4742c5a920a6"
+      }
+    },
+    "owner": "hussnain0702",
+    "android": {
+      "package": "com.hussnain0702.pockethisaab"
+    }
+  }
+}
