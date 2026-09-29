@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import { localMonthPrefix } from './format';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -139,9 +140,11 @@ export async function addUdhaar(
   note: string,
   date: string,
 ): Promise<void> {
+  // Slashes would break the /person/[name] route, so flatten them.
+  const cleanPerson = person.trim().replace(/\//g, ' ');
   await getDb().runAsync(
     'INSERT INTO udhaar (person, amount, direction, note, date, settled) VALUES (?, ?, ?, ?, ?, 0)',
-    [person.trim(), amount, direction, note || null, date],
+    [cleanPerson, amount, direction, note || null, date],
   );
 }
 
@@ -160,7 +163,7 @@ function sum(rows: { total: number | null }[]): number {
 
 export async function getDashboardSummary(now = new Date()): Promise<DashboardSummary> {
   const database = getDb();
-  const monthPrefix = now.toISOString().slice(0, 7); // YYYY-MM
+  const monthPrefix = localMonthPrefix(now); // YYYY-MM, local time
 
   const totalIncome = sum(await database.getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM income'));
   const totalExpenses = sum(await database.getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM expenses'));
@@ -190,7 +193,7 @@ export async function getDashboardSummary(now = new Date()): Promise<DashboardSu
     totalExpenses,
     totalLent,
     totalBorrowed,
-    balance: totalIncome - totalExpenses - totalLent + totalBorrowed,
+    balance: totalIncome - totalExpenses - totalLent - totalBorrowed,
     monthIncome,
     monthExpenses,
   };
@@ -257,7 +260,7 @@ export async function getMonthlyStats(monthsBack: number): Promise<
   const now = new Date();
   for (let i = monthsBack - 1; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const prefix = d.toISOString().slice(0, 7);
+    const prefix = localMonthPrefix(d);
     const income = sum(
       await getDb().getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM income WHERE date LIKE ?', [
         `${prefix}%`,
