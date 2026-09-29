@@ -1,0 +1,1 @@
+{"expo":{"experiments":{"typedRoutes":true},"name":"PocketHisaab","newArchEnabled":true,"orientation":"portrait","plugins":["expo-router","expo-status-bar"],"scheme":"pockethisaab","slug":"pockethisaab","userInterfaceStyle":"light","version":"1.0.0","web":{"bundler":"metro"}}}
