@@ -40,7 +40,7 @@ export default function AddUdhaar() {
     <SafeAreaView style={s.screen} edges={['bottom']}>
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 40 }]}>
         <Text style={s.h1}>New Udhaar Entry</Text>
-        <Text style={s.sub}>Write it down now — memory fades, ledgers don\u2019t.</Text>
+        <Text style={s.sub}>Write it down now — memory fades, ledgers don’t.</Text>
 
         <View style={{ marginTop: 18 }}>
           <Field
