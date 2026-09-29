@@ -104,6 +104,10 @@ export async function initDatabase(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_income_date ON income(date);
     CREATE INDEX IF NOT EXISTS idx_udhaar_person ON udhaar(person);
     CREATE INDEX IF NOT EXISTS idx_udhaar_date ON udhaar(date);
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 }
 
