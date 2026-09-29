@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { C, s } from '../../components/theme';
 import { Card, EmptyState, StatTile } from '../../components/ui';
 import { getDashboardSummary, getRecentActivity, type ActivityItem, type DashboardSummary } from '../../lib/db';
-import { formatRs, prettyDate } from '../../lib/format';
+import { formatRs, formatSignedRs, prettyDate } from '../../lib/format';
 
 const ACTIVITY_META: Record<ActivityItem['kind'], { emoji: string; tint: string }> = {
   income: { emoji: '💰', tint: C.emeraldSoft },
@@ -50,11 +50,19 @@ export default function Home() {
         {/* Balance hero */}
         <Card style={{ marginTop: 18, backgroundColor: C.navy, borderColor: C.navy }}>
           <Text style={{ color: '#9FC4B8', fontSize: 13, fontWeight: '600' }}>TOTAL BALANCE</Text>
-          <Text style={{ color: '#fff', fontSize: 38, fontWeight: '800', marginTop: 6, fontVariant: ['tabular-nums'] }}>
-            {formatRs(summary?.balance ?? 0)}
+          <Text
+            style={{
+              color: (summary?.balance ?? 0) < 0 ? '#FF9B9E' : '#fff',
+              fontSize: 38,
+              fontWeight: '800',
+              marginTop: 6,
+              fontVariant: ['tabular-nums'],
+            }}
+          >
+            {formatSignedRs(summary?.balance ?? 0)}
           </Text>
           <Text style={{ color: '#9FC4B8', fontSize: 12.5, marginTop: 8 }}>
-            Pocket money in, minus what you spent and lent out.
+            Pocket money in, minus what you spent, lent out and owe.
           </Text>
         </Card>
 
@@ -64,7 +72,7 @@ export default function Home() {
           <StatTile label="They owe you" value={formatRs(summary?.totalLent ?? 0)} tone="amber" />
         </View>
         <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-          <StatTile label="You owe" value={formatRs(summary?.totalBorrowed ?? 0)} tone="neutral" />
+          <StatTile label="You owe" value={formatRs(summary?.totalBorrowed ?? 0)} tone="red" />
           <StatTile label="Money in (total)" value={formatRs(summary?.totalIncome ?? 0)} tone="green" />
         </View>
 
