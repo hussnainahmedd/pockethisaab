@@ -54,6 +54,10 @@ export default function RootLayout() {
         <Stack.Screen name="add-income" options={{ presentation: 'modal', title: 'Add Pocket Money' }} />
         <Stack.Screen name="add-udhaar" options={{ presentation: 'modal', title: 'New Udhaar Entry' }} />
         <Stack.Screen name="person/[name]" options={{ title: 'Person' }} />
+        <Stack.Screen name="income-list" options={{ title: 'Pocket Money' }} />
+        <Stack.Screen name="edit-income" options={{ presentation: 'modal', title: 'Edit Entry' }} />
+        <Stack.Screen name="edit-expense" options={{ presentation: 'modal', title: 'Edit Expense' }} />
+        <Stack.Screen name="edit-udhaar" options={{ presentation: 'modal', title: 'Edit Udhaar' }} />
         <Stack.Screen name="+not-found" />
       </Stack>
     </SafeAreaProvider>
