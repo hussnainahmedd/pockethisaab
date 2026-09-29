@@ -13,7 +13,8 @@
     "scheme": "pockethisaab",
     "slug": "pockethisaab",
     "userInterfaceStyle": "light",
-    "version": "1.0.0",
+    "version": "1.0.1",
+    "icon": "./assets/icon.png",
     "web": {
       "bundler": "metro"
     },
@@ -25,7 +26,11 @@
     },
     "owner": "hussnain0702",
     "android": {
-      "package": "com.hussnain0702.pockethisaab"
+      "package": "com.hussnain0702.pockethisaab",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0B7A55"
+      }
     }
   }
 }
