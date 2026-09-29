@@ -3,6 +3,18 @@ export function formatRs(amount: number): string {
   return 'Rs ' + rounded.toLocaleString('en-PK');
 }
 
+/** Signed display: "-Rs 350" for negatives, "Rs 30,000" otherwise. */
+export function formatSignedRs(amount: number): string {
+  const rounded = Math.round(amount);
+  const abs = Math.abs(rounded).toLocaleString('en-PK');
+  return (rounded < 0 ? '-Rs ' : 'Rs ') + abs;
+}
+
+export function localMonthPrefix(d: Date = new Date()): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${d.getFullYear()}-${m}`;
+}
+
 export function todayISO(): string {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -13,7 +25,7 @@ export function todayISO(): string {
 export function monthPrefixOf(offsetMonths = 0): string {
   const d = new Date();
   const target = new Date(d.getFullYear(), d.getMonth() + offsetMonths, 1);
-  return target.toISOString().slice(0, 7); // YYYY-MM
+  return localMonthPrefix(target); // local time, not UTC
 }
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
