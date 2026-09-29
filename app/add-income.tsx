@@ -33,7 +33,8 @@ export default function AddIncome() {
   return (
     <SafeAreaView style={s.screen} edges={['bottom']}>
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 40 }]}>
-        <Text style={s.h1}>Add Pocket Money</Text>
+        <Text style={s.eyebrow}>ka-ching ✦</Text>
+        <Text style={[s.h1, { marginTop: 4 }]}>Add Pocket Money</Text>
         <Text style={s.sub}>Record money you received so your balance stays honest.</Text>
 
         <View style={{ marginTop: 18 }}>
@@ -47,14 +48,14 @@ export default function AddIncome() {
             placeholder="e.g. 5000"
             keyboardType="decimal-pad"
           />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: C.inkSoft, marginBottom: 8 }}>Source</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.inkSoft, marginBottom: 8 }}>Source</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
             {INCOME_SOURCES.map((src) => (
               <Chip key={src} label={src} selected={source === src} onPress={() => setSource(src)} />
             ))}
           </View>
           <Field label="Note (optional)" value={note} onChangeText={setNote} placeholder="e.g. Monthly allowance" />
-          {error ? <Text style={{ color: C.red, fontSize: 13.5, fontWeight: '600', marginBottom: 10 }}>{error}</Text> : null}
+          {error ? <Text style={{ color: C.redDark, fontSize: 13.5, fontWeight: '700', marginBottom: 10 }}>{error}</Text> : null}
           <PrimaryButton title={saving ? 'Saving…' : 'Save Pocket Money'} onPress={save} disabled={saving} />
         </View>
       </ScrollView>
