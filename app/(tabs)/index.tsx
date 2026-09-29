@@ -1,11 +1,18 @@
-import { useCallback, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Linking, Modal, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { C, s } from '../../components/theme';
-import { Card, EmptyState, StatTile } from '../../components/ui';
+import { Card, EmptyState, PrimaryButton, GhostButton, StatTile } from '../../components/ui';
 import { getDashboardSummary, getRecentActivity, type ActivityItem, type DashboardSummary } from '../../lib/db';
 import { formatRs, formatSignedRs, prettyDate } from '../../lib/format';
+import {
+  checkForUpdate,
+  getLastPromptedVersion,
+  setLastPromptedVersion,
+  type RemoteVersion,
+} from '../../lib/update';
 
 const ACTIVITY_META: Record<ActivityItem['kind'], { emoji: string; tint: string }> = {
   income: { emoji: '💰', tint: C.emeraldSoft },
@@ -37,6 +44,39 @@ export default function Home() {
   };
 
   const isFresh = summary && summary.totalIncome === 0 && summary.totalExpenses === 0 && summary.totalLent === 0 && summary.totalBorrowed === 0;
+
+  /* ---- In-app update check (silent when offline) ---- */
+  const [update, setUpdate] = useState<RemoteVersion | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const current = Constants.expoConfig?.version ?? '0.0.0';
+      const remote = await checkForUpdate(current);
+      if (!remote || cancelled) return;
+      const prompted = await getLastPromptedVersion();
+      if (prompted === remote.latestVersion || cancelled) return; // don't nag
+      setUpdate(remote);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleUpdateAction = async (openLink: boolean) => {
+    if (!update) return;
+    const v = update.latestVersion;
+    const url = update.apkUrl;
+    setUpdate(null);
+    await setLastPromptedVersion(v); // remember — only prompt again on a newer version
+    if (openLink) {
+      try {
+        await Linking.openURL(url);
+      } catch {
+        // silent: user can retry from the GitHub releases page
+      }
+    }
+  };
 
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
@@ -150,6 +190,36 @@ export default function Home() {
           View monthly stats →
         </Link>
       </ScrollView>
+
+      {/* Update available modal */}
+      <Modal visible={update !== null} transparent animationType="fade" onRequestClose={() => handleUpdateAction(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(15,30,27,0.5)', justifyContent: 'flex-end' }}>
+          <View
+            style={{
+              backgroundColor: C.card,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 22,
+              paddingBottom: 34,
+            }}
+          >
+            <Text style={{ fontSize: 40, textAlign: 'center' }}>🎉</Text>
+            <Text style={[s.h2, { textAlign: 'center', marginTop: 8, fontSize: 20 }]}>
+              Update available
+            </Text>
+            <Text style={[s.sub, { textAlign: 'center', marginTop: 8 }]}>
+              PocketHisaab v{update?.latestVersion} is out. {update?.message}
+            </Text>
+            <View style={{ marginTop: 18, gap: 10 }}>
+              <PrimaryButton title="Update now" onPress={() => handleUpdateAction(true)} />
+              <GhostButton title="Later" onPress={() => handleUpdateAction(false)} />
+            </View>
+            <Text style={{ textAlign: 'center', color: C.inkFaint, fontSize: 12, marginTop: 12 }}>
+              The new APK will download — open it to install.
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
