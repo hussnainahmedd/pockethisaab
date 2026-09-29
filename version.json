@@ -1,1 +1,5 @@
-{"apkUrl":"https://github.com/hussnainahmedd/pockethisaab/releases/download/v1.0.1/pockethisaab-v1.0.1.apk","latestVersion":"1.0.1","message":"Bug fixes and improvements."}
+{
+  "apkUrl": "https://github.com/hussnainahmedd/pockethisaab/releases/download/v1.0.2/pockethisaab-v1.0.2.apk",
+  "latestVersion": "1.0.2",
+  "message": "Update checker built in - you will be notified of future updates automatically."
+}
