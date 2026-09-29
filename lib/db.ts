@@ -137,6 +137,76 @@ export async function deleteExpense(id: number): Promise<void> {
   await getDb().runAsync('DELETE FROM expenses WHERE id = ?', [id]);
 }
 
+export async function getExpenseById(id: number): Promise<Expense | null> {
+  const rows = await getDb().getAllAsync<Expense>('SELECT * FROM expenses WHERE id = ?', [id]);
+  return rows[0] ?? null;
+}
+
+export async function updateExpense(
+  id: number,
+  amount: number,
+  category: string,
+  note: string,
+  date: string,
+): Promise<void> {
+  await getDb().runAsync('UPDATE expenses SET amount = ?, category = ?, note = ?, date = ? WHERE id = ?', [
+    amount,
+    category,
+    note || null,
+    date,
+    id,
+  ]);
+}
+
+export async function getAllIncome(): Promise<Income[]> {
+  return getDb().getAllAsync<Income>('SELECT * FROM income ORDER BY date DESC, id DESC');
+}
+
+export async function updateIncome(
+  id: number,
+  source: string,
+  amount: number,
+  note: string,
+  date: string,
+): Promise<void> {
+  await getDb().runAsync('UPDATE income SET source = ?, amount = ?, note = ?, date = ? WHERE id = ?', [
+    source,
+    amount,
+    note || null,
+    date,
+    id,
+  ]);
+}
+
+export async function deleteIncome(id: number): Promise<void> {
+  await getDb().runAsync('DELETE FROM income WHERE id = ?', [id]);
+}
+
+export async function getUdhaarById(id: number): Promise<UdhaarEntry | null> {
+  const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar WHERE id = ?', [id]);
+  return rows[0] ?? null;
+}
+
+export async function updateUdhaar(
+  id: number,
+  person: string,
+  amount: number,
+  direction: UdhaarDirection,
+  note: string,
+  date: string,
+): Promise<void> {
+  // Slashes would break the /person/[name] route, so flatten them.
+  const cleanPerson = person.trim().replace(/\//g, ' ');
+  await getDb().runAsync(
+    'UPDATE udhaar SET person = ?, amount = ?, direction = ?, note = ?, date = ? WHERE id = ?',
+    [cleanPerson, amount, direction, note || null, date, id],
+  );
+}
+
+export async function deleteUdhaar(id: number): Promise<void> {
+  await getDb().runAsync('DELETE FROM udhaar WHERE id = ?', [id]);
+}
+
 export async function addUdhaar(
   person: string,
   amount: number,
