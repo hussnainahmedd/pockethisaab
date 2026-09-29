@@ -1,36 +1,82 @@
-# PocketHisaab
+<div align="center">
 
-A personal expense + udhaar (lend/borrow) tracker for Android and iOS, built with Expo + React Native + TypeScript.
+# 💰 PocketHisaab
 
-**Your data never leaves your phone.** PocketHisaab stores everything in a local SQLite database on the device. There is no backend, no account, no login, no network calls — it works fully offline, and each install starts with its own fresh, empty database.
+**Your pocket money, udhaar & expenses — all in one place.**
 
-## Features
+[![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
+[![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactnative.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![SQLite](https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org)
 
-- **Home dashboard** — total balance, this month's spending, money people owe you, money you owe, plus quick-add buttons and recent activity.
-- **Udhaar ledger** — track who owes you and who you owe, per person, with full history and one-tap "settle".
-- **Expenses** — log spending by category (food, transport, recharge, shopping, health, bills, other), filter by month and category, long-press to delete.
-- **Pocket money** — record money received (allowance, gifts, refunds…) so your balance stays accurate.
-- **Stats** — monthly money-in vs money-out, net savings, 6-month bar chart, top spending categories.
+*100% offline. 100% private. Your data never leaves your phone.*
 
-## Run it
+[📥 Download APK](../../releases) · [🐛 Report a bug](../../issues)
+
+</div>
+
+---
+
+## 📱 Screenshots
+
+<div align="center">
+  <img src="screenshots/screen-home.webp" width="250" alt="Home dashboard" />
+  <img src="screenshots/screen-udhaar.webp" width="250" alt="Udhaar ledger" />
+  <img src="screenshots/screen-expenses.webp" width="250" alt="Expenses" />
+</div>
+
+---
+
+## ✨ Features
+
+| | |
+|---|---|
+| 🏠 **Home Dashboard** | Total balance hero card, month stats, quick-add buttons, recent activity |
+| 🤝 **Udhaar Ledger** | Track who owes you & who you owe — per-person history, one-tap settle |
+| 🧾 **Expense Tracker** | Log spending by category, filter by month, group by date |
+| 💵 **Pocket Money** | Record money received (allowance etc.) so your balance stays real |
+| 📊 **Stats** | Money in vs out, net savings, 6-month bar chart, top categories |
+
+## 🔒 Privacy by design
+
+PocketHisaab has **no backend, no login, no tracking**. Everything is stored in a
+local SQLite database on your device (`pockethisaab.db`). Install it on ten
+phones and each one gets its own fresh, private database — nobody can ever see
+anyone else's data. It works fully offline.
+
+## 🚀 Run it yourself
 
 ```bash
+git clone https://github.com/hussnainahmedd/pockethisaab.git
+cd pockethisaab
 npm install
 npx expo start
 ```
 
-Then scan the QR code with the [Expo Go](https://expo.dev/go) app, or press `a` for an Android emulator.
+Then scan the QR code with the **Expo Go** app, or press `a` for an Android
+emulator.
 
-## Build an installable APK
+## 📦 Build the APK
 
 ```bash
-npx expo prebuild
-# then build with Android Studio, or use EAS Build:
-npx eas build --platform android --profile preview
+npx eas-cli@latest login
+npx eas-cli@latest build -p android --profile preview
 ```
 
-Release APKs are also attached to this repo's GitHub Releases for direct install.
+Or grab the ready-made APK from the [Releases](../../releases) page and install
+it directly on your phone.
 
-## Privacy
+## 🛠️ Tech stack
 
-All data is stored locally via `expo-sqlite` in `pockethisaab.db` on the device. Uninstalling the app deletes everything. No analytics, no tracking, no servers.
+- **Expo** + **React Native** + **Expo Router** — one codebase, Android & iOS
+- **TypeScript** — type-safe throughout
+- **expo-sqlite** — local on-device database
+- Zero backend. Zero cost. Zero tracking.
+
+---
+
+<div align="center">
+
+Made with ❤️ by [Hussnain Ahmad](https://github.com/hussnainahmedd)
+
+</div>
