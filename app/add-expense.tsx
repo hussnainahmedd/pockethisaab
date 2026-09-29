@@ -33,7 +33,8 @@ export default function AddExpense() {
   return (
     <SafeAreaView style={s.screen} edges={['bottom']}>
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 40 }]}>
-        <Text style={s.h1}>Add Expense</Text>
+        <Text style={s.eyebrow}>log it ✦</Text>
+        <Text style={[s.h1, { marginTop: 4 }]}>Add Expense</Text>
         <Text style={s.sub}>Log what you spent, right when you spend it.</Text>
 
         <View style={{ marginTop: 18 }}>
@@ -47,14 +48,14 @@ export default function AddExpense() {
             placeholder="e.g. 250"
             keyboardType="decimal-pad"
           />
-          <Text style={{ fontSize: 13, fontWeight: '600', color: C.inkSoft, marginBottom: 8 }}>Category</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.inkSoft, marginBottom: 8 }}>Category</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 }}>
             {CATEGORIES.map((c) => (
               <Chip key={c.key} label={c.label} emoji={c.emoji} selected={category === c.key} onPress={() => setCategory(c.key)} />
             ))}
           </View>
           <Field label="Note (optional)" value={note} onChangeText={setNote} placeholder="e.g. Biryani with friends" />
-          {error ? <Text style={{ color: C.red, fontSize: 13.5, fontWeight: '600', marginBottom: 10 }}>{error}</Text> : null}
+          {error ? <Text style={{ color: C.redDark, fontSize: 13.5, fontWeight: '700', marginBottom: 10 }}>{error}</Text> : null}
           <PrimaryButton title={saving ? 'Saving…' : 'Save Expense'} onPress={save} disabled={saving} />
         </View>
       </ScrollView>
