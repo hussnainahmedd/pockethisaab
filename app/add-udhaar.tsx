@@ -39,7 +39,8 @@ export default function AddUdhaar() {
   return (
     <SafeAreaView style={s.screen} edges={['bottom']}>
       <ScrollView contentContainerStyle={[s.scroll, { paddingBottom: 40 }]}>
-        <Text style={s.h1}>New Udhaar Entry</Text>
+        <Text style={s.eyebrow}>never forget ✦</Text>
+        <Text style={[s.h1, { marginTop: 4 }]}>New Udhaar Entry</Text>
         <Text style={s.sub}>Write it down now — memory fades, ledgers don’t.</Text>
 
         <View style={{ marginTop: 18 }}>
@@ -54,7 +55,7 @@ export default function AddUdhaar() {
             autoCapitalize="words"
           />
 
-          <Text style={{ fontSize: 13, fontWeight: '600', color: C.inkSoft, marginBottom: 8 }}>Direction</Text>
+          <Text style={{ fontSize: 13, fontWeight: '700', color: C.inkSoft, marginBottom: 8 }}>Direction</Text>
           <View style={{ flexDirection: 'row', gap: 10, marginBottom: 14 }}>
             <DirectionCard
               label="I lent them"
@@ -81,7 +82,7 @@ export default function AddUdhaar() {
             keyboardType="decimal-pad"
           />
           <Field label="Note (optional)" value={note} onChangeText={setNote} placeholder="e.g. For lunch" />
-          {error ? <Text style={{ color: C.red, fontSize: 13.5, fontWeight: '600', marginBottom: 10 }}>{error}</Text> : null}
+          {error ? <Text style={{ color: C.redDark, fontSize: 13.5, fontWeight: '700', marginBottom: 10 }}>{error}</Text> : null}
           <PrimaryButton title={saving ? 'Saving…' : 'Save Entry'} onPress={save} disabled={saving} />
         </View>
       </ScrollView>
@@ -106,7 +107,7 @@ function DirectionCard({
       style={[
         {
           flex: 1,
-          borderRadius: 14,
+          borderRadius: 18,
           borderWidth: 2,
           borderColor: selected ? C.emerald : C.line,
           backgroundColor: selected ? C.emeraldSoft : '#fff',
