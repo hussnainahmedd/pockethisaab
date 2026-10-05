@@ -1,0 +1,1 @@
+{"description":"Local Expo module: SMS + notification transaction auto-fetch for PocketHisaab (Android only)","main":"src/index.ts","name":"transaction-autofetch","private":true,"types":"src/index.ts","version":"1.0.0"}

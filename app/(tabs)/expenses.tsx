@@ -169,6 +169,7 @@ export default function Expenses() {
                     <Text style={{ fontSize: 15, fontWeight: '800', color: C.ink, letterSpacing: -0.2 }}>{label}</Text>
                     <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 3 }}>
                       {cat?.label} · {prettyDate(e.date)}
+                      {e.origin === 'auto' ? ' ⚡' : ''}
                     </Text>
                   </View>
                   <Text style={{ fontSize: 15.5, fontWeight: '900', color: C.redDark, fontVariant: ['tabular-nums'], letterSpacing: -0.3 }}>

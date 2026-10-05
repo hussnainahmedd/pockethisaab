@@ -14,7 +14,8 @@
     "react": "19.2.3",
     "react-native": "0.86.3",
     "react-native-safe-area-context": "~5.7.0",
-    "react-native-screens": "~4.26.0"
+    "react-native-screens": "~4.26.0",
+    "transaction-autofetch": "file:./modules/transaction-autofetch"
   },
   "devDependencies": {
     "@types/crypto-js": "^4.2.2",
@@ -24,13 +25,13 @@
   "name": "pockethisaab",
   "private": true,
   "scripts": {
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "start": "expo start",
     "typecheck": "tsc --noEmit",
     "web": "expo start --web"
   },
-  "version": "1.0.5",
+  "version": "1.1.0",
   "overrides": {
     "react-dom": "19.2.3"
   }

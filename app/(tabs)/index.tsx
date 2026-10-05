@@ -7,6 +7,7 @@ import Constants from 'expo-constants';
 import { C, s } from '../../components/theme';
 import { Card, EmptyState, PrimaryButton, GhostButton, HeroCard, StatTile } from '../../components/ui';
 import { getDashboardSummary, getRecentActivity, type ActivityItem, type DashboardSummary } from '../../lib/db';
+import { isAutofetchEnabled } from '../../lib/autofetch/service';
 import { formatRs, formatSignedRs, prettyDate } from '../../lib/format';
 import {
   checkForUpdate,
@@ -25,11 +26,13 @@ export default function Home() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [afOn, setAfOn] = useState(false);
 
   const load = useCallback(async () => {
-    const [sum, act] = await Promise.all([getDashboardSummary(), getRecentActivity(8)]);
+    const [sum, act, af] = await Promise.all([getDashboardSummary(), getRecentActivity(8), isAutofetchEnabled()]);
     setSummary(sum);
     setActivity(act);
+    setAfOn(af);
   }, []);
 
   useFocusEffect(
@@ -121,6 +124,38 @@ export default function Home() {
           <QuickAction emoji="🤝" label="Udhaar" colors={['#8B5CF6', '#6D28D9']} onPress={() => router.push('/add-udhaar')} />
         </View>
 
+        {/* Auto-fetch */}
+        <Pressable
+          onPress={() => router.push('/autofetch-settings')}
+          style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1, transform: [{ scale: pressed ? 0.98 : 1 }] })}
+        >
+          <Card style={{ marginTop: 14 }}>
+            <View style={[s.row, { justifyContent: 'space-between', alignItems: 'center' }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Text style={{ fontSize: 24, marginRight: 12 }}>⚡</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '900', color: C.ink }}>Auto-fetch</Text>
+                  <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>
+                    {afOn ? 'Logging bank & wallet transactions automatically' : 'Log bank SMS & notifications automatically'}
+                  </Text>
+                </View>
+              </View>
+              <View
+                style={{
+                  backgroundColor: afOn ? C.emeraldSoft : C.line,
+                  borderRadius: 999,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: afOn ? C.emeraldDark : C.inkSoft }}>
+                  {afOn ? 'ON' : 'OFF'}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        </Pressable>
+
         {/* Recent activity */}
         <Text style={s.sectionTitle}>Recent activity</Text>
         {activity.length === 0 ? (
@@ -164,6 +199,7 @@ export default function Home() {
                     <Text style={{ fontSize: 15, fontWeight: '800', color: C.ink, letterSpacing: -0.2 }}>{a.label}</Text>
                     <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 3 }}>
                       {a.sublabel} · {prettyDate(a.date)}
+                      {a.origin === 'auto' ? ' ⚡' : ''}
                     </Text>
                   </View>
                   <Text

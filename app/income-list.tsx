@@ -102,6 +102,7 @@ export default function IncomeList() {
                   <Text style={{ fontSize: 15, fontWeight: '800', color: C.ink, letterSpacing: -0.2 }}>{e.source}</Text>
                   <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 3 }}>
                     {[e.note, prettyDate(e.date)].filter(Boolean).join(' · ')}
+                    {e.origin === 'auto' ? ' ⚡' : ''}
                   </Text>
                 </View>
                 <Text style={{ fontSize: 15.5, fontWeight: '900', color: C.emeraldDark, fontVariant: ['tabular-nums'], marginRight: 10 }}>

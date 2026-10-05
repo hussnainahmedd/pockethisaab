@@ -15,6 +15,7 @@ export interface Income {
   source: string;
   note: string | null;
   date: string; // YYYY-MM-DD
+  origin: string; // 'manual' | 'auto'
 }
 
 export interface Expense {
@@ -23,6 +24,7 @@ export interface Expense {
   category: string;
   note: string | null;
   date: string; // YYYY-MM-DD
+  origin: string; // 'manual' | 'auto'
 }
 
 export interface UdhaarEntry {
@@ -60,6 +62,7 @@ export interface ActivityItem {
   label: string;
   sublabel: string;
   date: string;
+  origin: string; // 'manual' | 'auto'
 }
 
 /* ------------------------------------------------------------------ */
@@ -84,14 +87,16 @@ export async function initDatabase(): Promise<void> {
       amount REAL NOT NULL,
       source TEXT NOT NULL,
       note TEXT,
-      date TEXT NOT NULL
+      date TEXT NOT NULL,
+      origin TEXT NOT NULL DEFAULT 'manual'
     );
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       amount REAL NOT NULL,
       category TEXT NOT NULL,
       note TEXT,
-      date TEXT NOT NULL
+      date TEXT NOT NULL,
+      origin TEXT NOT NULL DEFAULT 'manual'
     );
     CREATE TABLE IF NOT EXISTS udhaar (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,7 +115,20 @@ export async function initDatabase(): Promise<void> {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS autofetch_seen (
+      key TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL
+    );
   `);
+  // v1.1.0 migration: 'origin' column for auto-fetched entries (fresh installs
+  // get it from CREATE TABLE above; existing DBs get it here).
+  for (const t of ['income', 'expenses']) {
+    try {
+      await database.execAsync(`ALTER TABLE ${t} ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'`);
+    } catch {
+      // Column already exists — nothing to do.
+    }
+  }
   await ensureEncryption();
 }
 
@@ -208,21 +226,35 @@ async function ensureEncryptionInner(): Promise<void> {
 /* Writes                                                              */
 /* ------------------------------------------------------------------ */
 
-export async function addIncome(source: string, amount: number, note: string, date: string): Promise<void> {
-  await getDb().runAsync('INSERT INTO income (source, amount, note, date) VALUES (?, ?, ?, ?)', [
+export async function addIncome(
+  source: string,
+  amount: number,
+  note: string,
+  date: string,
+  origin: string = 'manual',
+): Promise<void> {
+  await getDb().runAsync('INSERT INTO income (source, amount, note, date, origin) VALUES (?, ?, ?, ?, ?)', [
     await encText(source),
     amount,
     (await encText(note)) || null,
     date,
+    origin,
   ]);
 }
 
-export async function addExpense(amount: number, category: string, note: string, date: string): Promise<void> {
-  await getDb().runAsync('INSERT INTO expenses (amount, category, note, date) VALUES (?, ?, ?, ?)', [
+export async function addExpense(
+  amount: number,
+  category: string,
+  note: string,
+  date: string,
+  origin: string = 'manual',
+): Promise<void> {
+  await getDb().runAsync('INSERT INTO expenses (amount, category, note, date, origin) VALUES (?, ?, ?, ?, ?)', [
     amount,
     category,
     (await encText(note)) || null,
     date,
+    origin,
   ]);
 }
 
@@ -484,6 +516,7 @@ export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
         label: (await decText(r.source)) ?? '',
         sublabel: (await decText(r.note)) ?? 'Pocket money added',
         date: r.date,
+        origin: r.origin ?? 'manual',
       })),
     )),
     ...(await Promise.all(
@@ -494,6 +527,7 @@ export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
         label: categoryLabel(r.category),
         sublabel: (await decText(r.note)) ?? 'Expense',
         date: r.date,
+        origin: r.origin ?? 'manual',
       })),
     )),
     ...(await Promise.all(
@@ -505,6 +539,7 @@ export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
         sublabel:
           r.direction === 'lent' ? `Lent${r.settled ? ' · settled' : ''}` : `Borrowed${r.settled ? ' · settled' : ''}`,
         date: r.date,
+        origin: 'manual',
       })),
     )),
   ];
@@ -537,3 +572,35 @@ export function categoryEmoji(key: string): string {
 }
 
 export const INCOME_SOURCES = ['Pocket Money', 'Gift', 'Refund', 'Work', 'Other'];
+
+/* ------------------------------------------------------------------ */
+/* Meta key-value helpers                                              */
+/* ------------------------------------------------------------------ */
+
+export async function getMetaValue(key: string): Promise<string | null> {
+  const rows = await getDb().getAllAsync<{ value: string }>('SELECT value FROM meta WHERE key = ?', [key]);
+  return rows[0]?.value ?? null;
+}
+
+export async function setMetaValue(key: string, value: string): Promise<void> {
+  await getDb().runAsync('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [key, value]);
+}
+
+/* ------------------------------------------------------------------ */
+/* Auto-fetch dedup store                                              */
+/* ------------------------------------------------------------------ */
+
+export async function hasSeenAutofetch(key: string): Promise<boolean> {
+  const rows = await getDb().getAllAsync<{ key: string }>('SELECT key FROM autofetch_seen WHERE key = ?', [key]);
+  return rows.length > 0;
+}
+
+export async function markAutofetchSeen(key: string): Promise<void> {
+  const database = getDb();
+  await database.runAsync('INSERT OR IGNORE INTO autofetch_seen (key, created_at) VALUES (?, ?)', [
+    key,
+    Date.now(),
+  ]);
+  // Prune keys older than 120 days so the table stays tiny.
+  await database.runAsync('DELETE FROM autofetch_seen WHERE created_at < ?', [Date.now() - 120 * 24 * 3600 * 1000]);
+}

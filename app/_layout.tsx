@@ -1,19 +1,35 @@
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, Text, View } from 'react-native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { initDatabase } from '../lib/db';
+import { runAutofetch } from '../lib/autofetch/service';
 import { C } from '../components/theme';
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     initDatabase()
-      .then(() => setReady(true))
+      .then(() => {
+        setReady(true);
+        // Fire-and-forget: import any new bank/wallet transactions.
+        runAutofetch().catch(() => {});
+      })
       .catch((e) => setError(String(e)));
+
+    // Re-run when the app comes back to the foreground (e.g. user granted
+    // Notification Access in system settings and returned).
+    const sub = AppState.addEventListener('change', (next) => {
+      if (appState.current.match(/inactive|background/) && next === 'active') {
+        runAutofetch().catch(() => {});
+      }
+      appState.current = next;
+    });
+    return () => sub.remove();
   }, []);
 
   if (error) {
@@ -58,6 +74,7 @@ export default function RootLayout() {
         <Stack.Screen name="edit-income" options={{ presentation: 'modal', title: 'Edit Entry' }} />
         <Stack.Screen name="edit-expense" options={{ presentation: 'modal', title: 'Edit Expense' }} />
         <Stack.Screen name="edit-udhaar" options={{ presentation: 'modal', title: 'Edit Udhaar' }} />
+        <Stack.Screen name="autofetch-settings" options={{ title: 'Auto-fetch ⚡' }} />
         <Stack.Screen name="+not-found" />
       </Stack>
     </SafeAreaProvider>

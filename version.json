@@ -1,5 +1,1 @@
-{
-  "latestVersion": "1.0.5",
-  "apkUrl": "https://github.com/hussnainahmedd/pockethisaab/releases/download/v1.0.5/pockethisaab-v1.0.5.apk",
-  "message": "v1.0.5 is here \u2014 ledger encryption fixed and working. Update to protect your data."
-}
+{"apkUrl":"https://github.com/hussnainahmedd/pockethisaab/releases/download/v1.1.0/pockethisaab-v1.1.0.apk","latestVersion":"1.1.0","message":"Auto-fetch is here ⚡ — bank & wallet transactions now log themselves from SMS and app notifications."}
