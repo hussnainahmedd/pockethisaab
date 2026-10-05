@@ -127,6 +127,17 @@ export async function initDatabase(): Promise<void> {
 const ENC_FLAG = 'enc_v1';
 
 async function ensureEncryption(): Promise<void> {
+  try {
+    await ensureEncryptionInner();
+  } catch {
+    // Encryption setup must never brick the app: if the device key can't be
+    // created (e.g. secure RNG unavailable), stay on the plaintext database
+    // and retry on the next launch. The enc_v1 flag is only set after a
+    // successful migration, so data is never half-migrated.
+  }
+}
+
+async function ensureEncryptionInner(): Promise<void> {
   const database = getDb();
   // Make sure the device key exists before touching any data.
   await getEncryptionKey();

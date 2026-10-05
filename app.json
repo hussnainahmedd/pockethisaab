@@ -13,7 +13,7 @@
     "scheme": "pockethisaab",
     "slug": "pockethisaab",
     "userInterfaceStyle": "light",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "icon": "./assets/icon.png",
     "web": {
       "bundler": "metro"
@@ -30,7 +30,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#0B7A55"
-      }
+      },
+      "versionCode": 2
     }
   }
 }

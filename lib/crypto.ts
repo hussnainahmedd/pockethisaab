@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
 import CryptoJS from 'crypto-js';
 
 /* ------------------------------------------------------------------ */
@@ -20,12 +21,34 @@ export const ENC_PREFIX = 'enc:v1:';
 
 let cachedKeyHex: string | null = null;
 
+/**
+ * Secure random bytes via the native expo-crypto module.
+ *
+ * NOTE: CryptoJS.lib.WordArray.random() must NOT be used here — it needs
+ * WebCrypto (crypto.getRandomValues) or Node (crypto.randomBytes), neither
+ * of which exists in the React Native runtime, and it throws instead of
+ * falling back. That exact throw bricked v1.0.4 on launch.
+ */
+function secureRandomWordArray(nBytes: number): CryptoJS.lib.WordArray {
+  const bytes = Crypto.getRandomBytes(nBytes);
+  const words: number[] = [];
+  for (let i = 0; i < bytes.length; i += 4) {
+    words.push(
+      ((bytes[i] ?? 0) << 24) |
+        ((bytes[i + 1] ?? 0) << 16) |
+        ((bytes[i + 2] ?? 0) << 8) |
+        (bytes[i + 3] ?? 0),
+    );
+  }
+  return CryptoJS.lib.WordArray.create(words, nBytes);
+}
+
 /** Load the device key, generating + storing it on first launch. */
 export async function getEncryptionKey(): Promise<string> {
   if (cachedKeyHex) return cachedKeyHex;
   let stored = await SecureStore.getItemAsync(KEY_ID);
   if (!stored) {
-    stored = CryptoJS.lib.WordArray.random(32).toString(CryptoJS.enc.Hex);
+    stored = secureRandomWordArray(32).toString(CryptoJS.enc.Hex);
     await SecureStore.setItemAsync(KEY_ID, stored);
   }
   cachedKeyHex = stored;
@@ -40,7 +63,7 @@ export function isEncrypted(value: string | null | undefined): boolean {
 export async function encText(value: string | null): Promise<string | null> {
   if (value == null || isEncrypted(value)) return value;
   const key = await getEncryptionKey();
-  const iv = CryptoJS.lib.WordArray.random(16);
+  const iv = secureRandomWordArray(16);
   const ct = CryptoJS.AES.encrypt(value, CryptoJS.enc.Hex.parse(key), { iv }).toString();
   return ENC_PREFIX + iv.toString(CryptoJS.enc.Base64) + '.' + ct;
 }
