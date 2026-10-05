@@ -1,5 +1,7 @@
 import * as SQLite from 'expo-sqlite';
+import * as FileSystem from 'expo-file-system/legacy';
 import { localMonthPrefix } from './format';
+import { decText, encText, getEncryptionKey, isEncrypted } from './crypto';
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -109,6 +111,86 @@ export async function initDatabase(): Promise<void> {
       value TEXT NOT NULL
     );
   `);
+  await ensureEncryption();
+}
+
+/* ------------------------------------------------------------------ */
+/* Encryption migration (one-time, v1)                                  */
+/*                                                                      */
+/* First launch after this update: takes a file backup of the database, */
+/* then encrypts every text field that identifies WHO the money        */
+/* relates to (udhaar person names, income sources, all notes) inside   */
+/* one transaction. Any failure rolls back and the app keeps working    */
+/* on the plaintext database — data is never left half-migrated.       */
+/* ------------------------------------------------------------------ */
+
+const ENC_FLAG = 'enc_v1';
+
+async function ensureEncryption(): Promise<void> {
+  const database = getDb();
+  // Make sure the device key exists before touching any data.
+  await getEncryptionKey();
+
+  const flag = await database.getAllAsync<{ value: string }>(
+    'SELECT value FROM meta WHERE key = ?',
+    [ENC_FLAG],
+  );
+  if (flag[0]?.value === '1') return;
+
+  // Best-effort file backup before the first migration.
+  try {
+    const dbPath = `${FileSystem.documentDirectory}SQLite/pockethisaab.db`;
+    const backupPath = `${FileSystem.documentDirectory}SQLite/pockethisaab.backup-pre-enc.db`;
+    await FileSystem.copyAsync({ from: dbPath, to: backupPath });
+  } catch {
+    // Backup is a safety net, not a requirement — migration continues.
+  }
+
+  await database.execAsync('BEGIN');
+  try {
+    const incomeRows = await database.getAllAsync<{ id: number; source: string; note: string | null }>(
+      'SELECT id, source, note FROM income',
+    );
+    for (const r of incomeRows) {
+      if (isEncrypted(r.source) && (r.note == null || isEncrypted(r.note))) continue;
+      await database.runAsync('UPDATE income SET source = ?, note = ? WHERE id = ?', [
+        await encText(r.source),
+        await encText(r.note),
+        r.id,
+      ]);
+    }
+
+    const expenseRows = await database.getAllAsync<{ id: number; note: string | null }>(
+      'SELECT id, note FROM expenses',
+    );
+    for (const r of expenseRows) {
+      if (r.note == null || isEncrypted(r.note)) continue;
+      await database.runAsync('UPDATE expenses SET note = ? WHERE id = ?', [
+        await encText(r.note),
+        r.id,
+      ]);
+    }
+
+    const udhaarRows = await database.getAllAsync<{ id: number; person: string; note: string | null }>(
+      'SELECT id, person, note FROM udhaar',
+    );
+    for (const r of udhaarRows) {
+      if (isEncrypted(r.person) && (r.note == null || isEncrypted(r.note))) continue;
+      await database.runAsync('UPDATE udhaar SET person = ?, note = ? WHERE id = ?', [
+        await encText(r.person),
+        await encText(r.note),
+        r.id,
+      ]);
+    }
+
+    await database.runAsync('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [ENC_FLAG, '1']);
+    await database.execAsync('COMMIT');
+  } catch (e) {
+    await database.execAsync('ROLLBACK');
+    // Fail open: the app keeps working on the unencrypted database rather
+    // than risking data loss. Migration will be retried next launch.
+    console.warn('Ledger encryption migration failed, continuing unencrypted:', e);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -117,9 +199,9 @@ export async function initDatabase(): Promise<void> {
 
 export async function addIncome(source: string, amount: number, note: string, date: string): Promise<void> {
   await getDb().runAsync('INSERT INTO income (source, amount, note, date) VALUES (?, ?, ?, ?)', [
-    source,
+    await encText(source),
     amount,
-    note || null,
+    (await encText(note)) || null,
     date,
   ]);
 }
@@ -128,7 +210,7 @@ export async function addExpense(amount: number, category: string, note: string,
   await getDb().runAsync('INSERT INTO expenses (amount, category, note, date) VALUES (?, ?, ?, ?)', [
     amount,
     category,
-    note || null,
+    (await encText(note)) || null,
     date,
   ]);
 }
@@ -139,7 +221,9 @@ export async function deleteExpense(id: number): Promise<void> {
 
 export async function getExpenseById(id: number): Promise<Expense | null> {
   const rows = await getDb().getAllAsync<Expense>('SELECT * FROM expenses WHERE id = ?', [id]);
-  return rows[0] ?? null;
+  const r = rows[0];
+  if (!r) return null;
+  return { ...r, note: await decText(r.note) };
 }
 
 export async function updateExpense(
@@ -152,14 +236,17 @@ export async function updateExpense(
   await getDb().runAsync('UPDATE expenses SET amount = ?, category = ?, note = ?, date = ? WHERE id = ?', [
     amount,
     category,
-    note || null,
+    (await encText(note)) || null,
     date,
     id,
   ]);
 }
 
 export async function getAllIncome(): Promise<Income[]> {
-  return getDb().getAllAsync<Income>('SELECT * FROM income ORDER BY date DESC, id DESC');
+  const rows = await getDb().getAllAsync<Income>('SELECT * FROM income ORDER BY date DESC, id DESC');
+  return Promise.all(
+    rows.map(async (r) => ({ ...r, source: (await decText(r.source)) ?? '', note: await decText(r.note) })),
+  );
 }
 
 export async function updateIncome(
@@ -170,9 +257,9 @@ export async function updateIncome(
   date: string,
 ): Promise<void> {
   await getDb().runAsync('UPDATE income SET source = ?, amount = ?, note = ?, date = ? WHERE id = ?', [
-    source,
+    await encText(source),
     amount,
-    note || null,
+    (await encText(note)) || null,
     date,
     id,
   ]);
@@ -184,7 +271,9 @@ export async function deleteIncome(id: number): Promise<void> {
 
 export async function getUdhaarById(id: number): Promise<UdhaarEntry | null> {
   const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar WHERE id = ?', [id]);
-  return rows[0] ?? null;
+  const r = rows[0];
+  if (!r) return null;
+  return { ...r, person: (await decText(r.person)) ?? '', note: await decText(r.note) };
 }
 
 export async function updateUdhaar(
@@ -199,7 +288,7 @@ export async function updateUdhaar(
   const cleanPerson = person.trim().replace(/\//g, ' ');
   await getDb().runAsync(
     'UPDATE udhaar SET person = ?, amount = ?, direction = ?, note = ?, date = ? WHERE id = ?',
-    [cleanPerson, amount, direction, note || null, date, id],
+    [await encText(cleanPerson), amount, direction, (await encText(note)) || null, date, id],
   );
 }
 
@@ -218,7 +307,7 @@ export async function addUdhaar(
   const cleanPerson = person.trim().replace(/\//g, ' ');
   await getDb().runAsync(
     'INSERT INTO udhaar (person, amount, direction, note, date, settled) VALUES (?, ?, ?, ?, ?, 0)',
-    [cleanPerson, amount, direction, note || null, date],
+    [await encText(cleanPerson), amount, direction, (await encText(note)) || null, date],
   );
 }
 
@@ -274,57 +363,69 @@ export async function getDashboardSummary(now = new Date()): Promise<DashboardSu
 }
 
 export async function getPeople(): Promise<PersonSummary[]> {
-  const rows = await getDb().getAllAsync<{
-    name: string;
-    lent: number | null;
-    borrowed: number | null;
-    openCount: number;
-  }>(`
-    SELECT person AS name,
-      SUM(CASE WHEN direction = 'lent' THEN amount ELSE 0 END) AS lent,
-      SUM(CASE WHEN direction = 'borrowed' THEN amount ELSE 0 END) AS borrowed,
-      COUNT(*) AS openCount
-    FROM udhaar
-    WHERE settled = 0
-    GROUP BY person
-    ORDER BY person COLLATE NOCASE
-  `);
-  return rows.map((r) => {
-    const lent = r.lent ?? 0;
-    const borrowed = r.borrowed ?? 0;
-    return { name: r.name, lent, borrowed, net: lent - borrowed, openCount: r.openCount };
-  });
+  // Person names are encrypted at rest, so grouping happens in JS after decrypt.
+  const rows = await getDb().getAllAsync<{ person: string; direction: UdhaarDirection; amount: number }>(
+    'SELECT person, direction, amount FROM udhaar WHERE settled = 0',
+  );
+  const byName = new Map<string, PersonSummary>();
+  for (const r of rows) {
+    const name = (await decText(r.person)) ?? '';
+    let s = byName.get(name);
+    if (!s) {
+      s = { name, lent: 0, borrowed: 0, net: 0, openCount: 0 };
+      byName.set(name, s);
+    }
+    if (r.direction === 'lent') s.lent += r.amount;
+    else s.borrowed += r.amount;
+    s.openCount += 1;
+  }
+  const out = [...byName.values()];
+  for (const s of out) s.net = s.lent - s.borrowed;
+  out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  return out;
 }
 
 export async function getPersonEntries(name: string): Promise<UdhaarEntry[]> {
-  return getDb().getAllAsync<UdhaarEntry>(
-    'SELECT * FROM udhaar WHERE person = ? ORDER BY date DESC, id DESC',
-    [name],
-  );
+  const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar ORDER BY date DESC, id DESC');
+  const out: UdhaarEntry[] = [];
+  for (const r of rows) {
+    const person = await decText(r.person);
+    if (person === name) out.push({ ...r, person: person ?? '', note: await decText(r.note) });
+  }
+  return out;
 }
 
 export async function getPersonTotals(name: string): Promise<{ lent: number; borrowed: number; settled: number }> {
-  const open = await getDb().getAllAsync<{ lent: number | null; borrowed: number | null }>(
-    "SELECT SUM(CASE WHEN direction = 'lent' THEN amount ELSE 0 END) AS lent, SUM(CASE WHEN direction = 'borrowed' THEN amount ELSE 0 END) AS borrowed FROM udhaar WHERE person = ? AND settled = 0",
-    [name],
-  );
-  const settled = await getDb().getAllAsync<{ n: number }>(
-    'SELECT COUNT(*) AS n FROM udhaar WHERE person = ? AND settled = 1',
-    [name],
-  );
-  return { lent: open[0]?.lent ?? 0, borrowed: open[0]?.borrowed ?? 0, settled: settled[0]?.n ?? 0 };
+  const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar');
+  let lent = 0;
+  let borrowed = 0;
+  let settled = 0;
+  for (const r of rows) {
+    if ((await decText(r.person)) !== name) continue;
+    if (r.settled) {
+      settled += 1;
+    } else if (r.direction === 'lent') {
+      lent += r.amount;
+    } else {
+      borrowed += r.amount;
+    }
+  }
+  return { lent, borrowed, settled };
 }
 
 export async function getExpenses(monthPrefix: string, category: string | null): Promise<Expense[]> {
+  let rows: Expense[];
   if (category) {
-    return getDb().getAllAsync<Expense>(
+    rows = await getDb().getAllAsync<Expense>(
       'SELECT * FROM expenses WHERE date LIKE ? AND category = ? ORDER BY date DESC, id DESC',
       [`${monthPrefix}%`, category],
     );
+  } else {
+    rows = await getDb().getAllAsync<Expense>('SELECT * FROM expenses WHERE date LIKE ? ORDER BY date DESC, id DESC', [
+      `${monthPrefix}%`,
+    ]);
   }
-  return getDb().getAllAsync<Expense>('SELECT * FROM expenses WHERE date LIKE ? ORDER BY date DESC, id DESC', [
-    `${monthPrefix}%`,
-  ]);
+  return Promise.all(rows.map(async (r) => ({ ...r, note: await decText(r.note) })));
 }
 
 export async function getMonthlyStats(monthsBack: number): Promise<
@@ -364,30 +465,37 @@ export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
   const udhaar = await database.getAllAsync<UdhaarEntry>('SELECT * FROM udhaar ORDER BY date DESC, id DESC LIMIT ?', [limit]);
 
   const items: ActivityItem[] = [
-    ...income.map((r) => ({
-      kind: 'income' as const,
-      id: r.id,
-      amount: r.amount,
-      label: r.source,
-      sublabel: r.note ?? 'Pocket money added',
-      date: r.date,
-    })),
-    ...expenses.map((r) => ({
-      kind: 'expense' as const,
-      id: r.id,
-      amount: r.amount,
-      label: categoryLabel(r.category),
-      sublabel: r.note ?? 'Expense',
-      date: r.date,
-    })),
-    ...udhaar.map((r) => ({
-      kind: 'udhaar' as const,
-      id: r.id,
-      amount: r.amount,
-      label: r.person,
-      sublabel: r.direction === 'lent' ? `Lent${r.settled ? ' · settled' : ''}` : `Borrowed${r.settled ? ' · settled' : ''}`,
-      date: r.date,
-    })),
+    ...(await Promise.all(
+      income.map(async (r) => ({
+        kind: 'income' as const,
+        id: r.id,
+        amount: r.amount,
+        label: (await decText(r.source)) ?? '',
+        sublabel: (await decText(r.note)) ?? 'Pocket money added',
+        date: r.date,
+      })),
+    )),
+    ...(await Promise.all(
+      expenses.map(async (r) => ({
+        kind: 'expense' as const,
+        id: r.id,
+        amount: r.amount,
+        label: categoryLabel(r.category),
+        sublabel: (await decText(r.note)) ?? 'Expense',
+        date: r.date,
+      })),
+    )),
+    ...(await Promise.all(
+      udhaar.map(async (r) => ({
+        kind: 'udhaar' as const,
+        id: r.id,
+        amount: r.amount,
+        label: (await decText(r.person)) ?? '',
+        sublabel:
+          r.direction === 'lent' ? `Lent${r.settled ? ' · settled' : ''}` : `Borrowed${r.settled ? ' · settled' : ''}`,
+        date: r.date,
+      })),
+    )),
   ];
   items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
   return items.slice(0, limit);
