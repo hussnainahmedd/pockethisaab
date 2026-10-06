@@ -15,7 +15,7 @@ import {
   setNotifChannelEnabled,
   setSmsChannelEnabled,
 } from '../lib/autofetch/service';
-import { getMetaValue } from '../lib/db';
+import { getMetaValue, setMetaValue } from '../lib/db';
 import { isAutofetchNativeAvailable, openNotificationListenerSettings } from '../modules/transaction-autofetch/src';
 
 export default function AutofetchSettings() {
@@ -25,19 +25,22 @@ export default function AutofetchSettings() {
   const [notifOn, setNotifOn] = useState(false);
   const [smsGranted, setSmsGranted] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
+  const [skipSelf, setSkipSelf] = useState(true);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [en, sOn, nOn, sGr] = await Promise.all([
+    const [en, sOn, nOn, sGr, skip] = await Promise.all([
       isAutofetchEnabled(),
       getMetaValue(META_SMS).then((v: string | null) => v === '1'),
       getMetaValue(META_NOTIF).then((v: string | null) => v === '1'),
       hasSmsPermission(),
+      getMetaValue('af_skip_self_transfers').then((v: string | null) => v !== '0'),
     ]);
     setEnabled(en);
     setSmsOn(sOn);
     setNotifOn(nOn);
     setSmsGranted(sGr);
+    setSkipSelf(skip);
     setNotifGranted(hasNotificationAccess());
   }, []);
 
@@ -189,6 +192,29 @@ export default function AutofetchSettings() {
             This opens a system settings screen — it's a special Android permission, not a popup.
             Only notifications from finance apps are read; everything else is ignored.
           </Text>
+        </Card>
+
+        {/* Self-transfers */}
+        <Text style={s.sectionTitle}>Self-transfers</Text>
+        <Card>
+          <View style={[s.row, { justifyContent: 'space-between' }]}>
+            <View style={{ flex: 1, marginRight: 12 }}>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: C.ink }}>Skip my own transfers</Text>
+              <Text style={{ fontSize: 13, color: C.inkSoft, marginTop: 4 }}>
+                When you move money between your own accounts (Easypaisa → JazzCash), the send and
+                receive cancel out — neither is logged.
+              </Text>
+            </View>
+            <Switch
+              value={skipSelf}
+              disabled={busy}
+              onValueChange={async (v) => {
+                setSkipSelf(v);
+                await setMetaValue('af_skip_self_transfers', v ? '1' : '0');
+              }}
+              trackColor={{ false: C.line, true: C.emerald }}
+            />
+          </View>
         </Card>
 
         {/* Safety + privacy */}

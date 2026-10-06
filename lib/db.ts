@@ -312,6 +312,27 @@ export async function deleteIncome(id: number): Promise<void> {
   await getDb().runAsync('DELETE FROM income WHERE id = ?', [id]);
 }
 
+/**
+ * Find a recent auto-added entry with the exact same amount on the given
+ * date (used for self-transfer detection: money moved between the user's
+ * own accounts shows up as an out+in pair that should both be skipped).
+ */
+export async function findAutoIncomeByAmount(amount: number, date: string): Promise<Income | null> {
+  const rows = await getDb().getAllAsync<Income>(
+    "SELECT * FROM income WHERE origin='auto' AND amount=? AND date=? ORDER BY id DESC LIMIT 1",
+    [amount, date],
+  );
+  return rows[0] ?? null;
+}
+
+export async function findAutoExpenseByAmount(amount: number, date: string): Promise<Expense | null> {
+  const rows = await getDb().getAllAsync<Expense>(
+    "SELECT * FROM expenses WHERE origin='auto' AND amount=? AND date=? ORDER BY id DESC LIMIT 1",
+    [amount, date],
+  );
+  return rows[0] ?? null;
+}
+
 export async function getUdhaarById(id: number): Promise<UdhaarEntry | null> {
   const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar WHERE id = ?', [id]);
   const r = rows[0];

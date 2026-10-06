@@ -12,7 +12,7 @@
  */
 import { PermissionsAndroid, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { addExpense, addIncome, hasSeenAutofetch, markAutofetchSeen, getMetaValue, setMetaValue } from '../db';
+import { addExpense, addIncome, hasSeenAutofetch, markAutofetchSeen, getMetaValue, setMetaValue, findAutoExpenseByAmount, findAutoIncomeByAmount, deleteExpense, deleteIncome } from '../db';
 import { identifySmsSender, notifAppLabel, NOTIF_APP_PACKAGES, SMS_SENDER_PATTERNS } from './senders';
 import { parseNotificationBody, parseSmsBody, type ParsedTransaction } from './parser';
 import {
@@ -181,6 +181,28 @@ async function insertIfNew(p: ParsedTransaction, salt: string): Promise<boolean>
     if (await hasSeenAutofetch(k)) return false;
   }
   const date = isoDateLocal(p.dateMs);
+  // Self-transfer detection: money moved between the user's own accounts
+  // (e.g. Easypaisa -> JazzCash) appears as an out+in pair of the same
+  // amount. If we find the matching opposite-direction auto entry from
+  // today, delete it and skip this one — net effect zero, as it should be.
+  const skipSelf = (await getMetaValue('af_skip_self_transfers')) !== '0';
+  if (skipSelf) {
+    if (p.direction === 'in') {
+      const pair = await findAutoExpenseByAmount(p.amount, date);
+      if (pair) {
+        await deleteExpense(pair.id);
+        for (const k of keys) await markAutofetchSeen(k);
+        return false;
+      }
+    } else {
+      const pair = await findAutoIncomeByAmount(p.amount, date);
+      if (pair) {
+        await deleteIncome(pair.id);
+        for (const k of keys) await markAutofetchSeen(k);
+        return false;
+      }
+    }
+  }
   const tag = `⚡ ${p.bankLabel}${p.tid ? ` · TID ${p.tid}` : ''}`;
   const note = `${tag} · ${p.counterparty}`.slice(0, 140);
   if (p.direction === 'in') {

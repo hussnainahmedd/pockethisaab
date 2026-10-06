@@ -31,7 +31,7 @@
     "typecheck": "tsc --noEmit",
     "web": "expo start --web"
   },
-  "version": "1.1.0",
+  "version": "1.1.1",
   "overrides": {
     "react-dom": "19.2.3"
   }
