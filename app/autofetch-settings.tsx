@@ -177,7 +177,7 @@ export default function AutofetchSettings() {
           <StatusRow
             emoji="🔔"
             title="Finance app notifications"
-            desc="SadaPay, NayaPay, Finja — they send push notifications instead of SMS."
+            desc="SadaPay, NayaPay, Finja, Faysal DigiBank — they send push notifications instead of SMS."
             active={notifOn && notifGranted}
             activeLabel={notifGranted ? (notifOn ? 'Listening' : 'Access granted') : 'Access needed'}
           />

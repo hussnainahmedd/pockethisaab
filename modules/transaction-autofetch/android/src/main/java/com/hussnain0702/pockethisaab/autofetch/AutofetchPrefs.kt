@@ -27,6 +27,7 @@ object AutofetchPrefs {
     "pk.com.sadapay",
     "com.finja.consumer", // Finja (candidate ids — harmless if absent)
     "com.finja.app",
+    "com.avanza.ambitwizfbl", // Faysal DigiBank (verified Play listing id)
   )
 
   private fun prefs(context: Context) =

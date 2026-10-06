@@ -45,7 +45,7 @@ function cleanName(raw: string | undefined): string {
 function tidOf(body: string): string | null {
   const m =
     body.match(/TID:\s*([0-9]+)/i) ||
-    body.match(/Ref\s*#?\s*:?\s*([0-9]+)/i) ||
+    body.match(/Ref(?:erence)?\s*#?\s*:?\s*([0-9]+)/i) ||
     body.match(/Txn\.?\s*ID:\s*([0-9]+)/i) ||
     body.match(/Transaction\s*ID:\s*([0-9]+)/i);
   return m ? m[1] : null;
@@ -240,6 +240,16 @@ const NOTIF_TEMPLATES: NotifTemplate[] = [
     dir: 'out',
     re: new RegExp(`(?:payment|transaction)\\s+of\\s+${RS}\\s*${AMT}[^.]{0,60}?\\b(?:successful|completed|done)\\b`, 'i'),
     cp: (m) => cleanName(m[0].match(/\bat\s+(.+?)(?:\s+on|\.|$)/i)?.[1]) || '',
+  },
+  // Faysal DigiBank: "Your QR transaction from *8588 in FBL to HASSAN TUC SHOP
+  // on 06-OCT-2026 08:49 PM of PKR 76.00 has been successful."
+  {
+    dir: 'out',
+    re: new RegExp(
+      `transaction\\s+from\\s+\\S+\\s+in\\s+\\S+\\s+to\\s+.+?\\s+on\\s+\\d{2}-[A-Z]{3}-\\d{4}[^.]*?\\bof\\s+${RS}\\s*${AMT}\\s+has\\s+been\\s+successful`,
+      'i',
+    ),
+    cp: (m) => cleanName(m[0].match(/\bto\s+(.+?)\s+on\s+\d{2}-/i)?.[1]) || 'Faysal Bank',
   },
 ];
 

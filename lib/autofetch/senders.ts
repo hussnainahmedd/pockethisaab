@@ -70,6 +70,7 @@ export const NOTIF_APP_PACKAGES: { pkg: string; label: string }[] = [
   { pkg: 'pk.com.sadapay', label: 'SadaPay' },
   { pkg: 'com.finja.consumer', label: 'Finja' },
   { pkg: 'com.finja.app', label: 'Finja' },
+  { pkg: 'com.avanza.ambitwizfbl', label: 'Faysal Bank' }, // Faysal DigiBank (verified Play listing id)
 ];
 
 export function notifAppLabel(pkg: string): string {
