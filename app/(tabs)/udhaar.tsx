@@ -1,11 +1,11 @@
 import { useCallback, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { C, s } from '../../components/theme';
 import { Card, EmptyState } from '../../components/ui';
-import { getPeople, type PersonSummary } from '../../lib/db';
+import { deleteAllUdhaar, getPeople, type PersonSummary } from '../../lib/db';
 import { formatRs } from '../../lib/format';
 
 export default function Udhaar() {
@@ -30,6 +30,24 @@ export default function Udhaar() {
 
   const totalOwedToMe = people.reduce((a, p) => a + Math.max(0, p.net), 0);
   const totalIOwe = people.reduce((a, p) => a + Math.max(0, -p.net), 0);
+
+  const askResetAll = () => {
+    Alert.alert(
+      'Reset Udhaar?',
+      'This will permanently delete every udhaar entry for all people. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAllUdhaar();
+            load();
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <SafeAreaView style={s.screen} edges={['top']}>
@@ -160,6 +178,23 @@ export default function Udhaar() {
           <Text style={{ textAlign: 'center', color: C.inkFaint, fontSize: 12, marginTop: 14 }}>
             Open a person, then long-press any entry to edit or delete it.
           </Text>
+        )}
+        {people.length > 0 && (
+          <Pressable
+            onPress={askResetAll}
+            style={({ pressed }) => ({
+              marginTop: 12,
+              borderRadius: 18,
+              paddingVertical: 14,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: '#FECDD3',
+              backgroundColor: '#FFF1F2',
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Text style={{ color: '#E11D48', fontWeight: '700', fontSize: 14 }}>Reset all Udhaar</Text>
+          </Pressable>
         )}
       </ScrollView>
     </SafeAreaView>

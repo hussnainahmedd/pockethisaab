@@ -312,6 +312,21 @@ export async function deleteIncome(id: number): Promise<void> {
   await getDb().runAsync('DELETE FROM income WHERE id = ?', [id]);
 }
 
+/** Delete ALL income entries (reset Pocket Money). No confirmation here — the UI must ask. */
+export async function deleteAllIncome(): Promise<void> {
+  await getDb().runAsync('DELETE FROM income');
+}
+
+/** Delete ALL expense entries (reset Expenses). No confirmation here — the UI must ask. */
+export async function deleteAllExpenses(): Promise<void> {
+  await getDb().runAsync('DELETE FROM expenses');
+}
+
+/** Delete ALL udhaar entries (reset Udhaar). No confirmation here — the UI must ask. */
+export async function deleteAllUdhaar(): Promise<void> {
+  await getDb().runAsync('DELETE FROM udhaar');
+}
+
 /**
  * Find a recent auto-added entry with the exact same amount on the given
  * date (used for self-transfer detection: money moved between the user's

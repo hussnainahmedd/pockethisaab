@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { C, s } from '../../components/theme';
 import { Card, Chip, EmptyState, HeroCard } from '../../components/ui';
-import { CATEGORIES, deleteExpense, getExpenses, type Expense } from '../../lib/db';
+import { CATEGORIES, deleteAllExpenses, deleteExpense, getExpenses, type Expense } from '../../lib/db';
 import { formatRs, monthPrefixOf, monthTitle, prettyDate } from '../../lib/format';
 
 export default function Expenses() {
@@ -33,6 +33,24 @@ export default function Expenses() {
   };
 
   const total = expenses.reduce((a, e) => a + e.amount, 0);
+
+  const askResetAll = () => {
+    Alert.alert(
+      'Reset Expenses?',
+      `This will permanently delete all ${expenses.length} expense entries. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAllExpenses();
+            load();
+          },
+        },
+      ],
+    );
+  };
 
   const rowActions = (e: Expense, label: string) => {
     Alert.alert(`Spent · ${formatRs(e.amount)}`, 'What do you want to do?', [
@@ -184,6 +202,23 @@ export default function Expenses() {
           <Text style={{ textAlign: 'center', color: C.inkFaint, fontSize: 12, marginTop: 14 }}>
             Long-press an entry to edit or delete it.
           </Text>
+        )}
+        {expenses.length > 0 && (
+          <Pressable
+            onPress={askResetAll}
+            style={({ pressed }) => ({
+              marginTop: 12,
+              borderRadius: 18,
+              paddingVertical: 14,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: '#FECDD3',
+              backgroundColor: '#FFF1F2',
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Text style={{ color: '#E11D48', fontWeight: '700', fontSize: 14 }}>Reset all Expenses</Text>
+          </Pressable>
         )}
       </ScrollView>
     </SafeAreaView>

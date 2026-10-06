@@ -4,7 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { C, s } from '../components/theme';
 import { Card, EmptyState } from '../components/ui';
-import { deleteIncome, getAllIncome, type Income } from '../lib/db';
+import { deleteAllIncome, deleteIncome, getAllIncome, type Income } from '../lib/db';
 import { formatRs, prettyDate } from '../lib/format';
 
 export default function IncomeList() {
@@ -41,6 +41,24 @@ export default function IncomeList() {
         },
       },
     ]);
+  };
+
+  const askResetAll = () => {
+    Alert.alert(
+      'Reset Pocket Money?',
+      `This will permanently delete all ${entries.length} income entries. This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete all',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAllIncome();
+            load();
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -162,6 +180,24 @@ export default function IncomeList() {
         >
           <Text style={{ color: '#fff', fontWeight: '800', fontSize: 15.5 }}>+ Add Pocket Money</Text>
         </Pressable>
+
+        {entries.length > 0 && (
+          <Pressable
+            onPress={askResetAll}
+            style={({ pressed }) => ({
+              marginTop: 12,
+              borderRadius: 18,
+              paddingVertical: 14,
+              alignItems: 'center',
+              borderWidth: 1.5,
+              borderColor: '#FECDD3',
+              backgroundColor: '#FFF1F2',
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <Text style={{ color: '#E11D48', fontWeight: '700', fontSize: 14 }}>Reset all Pocket Money</Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
