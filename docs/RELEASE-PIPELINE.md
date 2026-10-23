@@ -35,7 +35,11 @@ Ground truth, extracted from the shipped v1.1.3 APK's signing block
 (2026-10-24):
 
 - **Signing certificate SHA-256:**
-  `56:57:C8:7F:EC:CB:23:12:72:01:6E:15:DA:A0:D7:DA:82:4D:DD:53:83:7A:3A:09:7F:82:FF:9D:82:F2:F2:CC`
+  `6D:1F:67:8C:EA:13:13:58:1E:E9:60:5F:E1:C1:4A:09:34:AD:A8:7C:B0:8F:51:AF:35:AE:C7:EA:A4:8D:21:60`
+  (verified 2026-10-24 with OpenSSL against both the shipped v1.1.3
+  APK and the v2.0.0 APK — identical certificates. An earlier
+  extraction that produced a different value was a parsing error and
+  has been corrected everywhere.)
 
 The release workflow compares the freshly built APK's certificate
 against this value and **aborts the release on any mismatch** — it will

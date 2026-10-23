@@ -1,1 +1,5 @@
-{"apkUrl":"https://github.com/hussnainahmedd/pockethisaab/releases/download/v1.1.3/pockethisaab-v1.1.3.apk","latestVersion":"1.1.3","message":"Faysal DigiBank notifications now auto-fetch ⚡ — QR payments and transfers log themselves. Plus: skip self-transfers, reset buttons for every section."}
+{
+  "apkUrl": "https://github.com/hussnainahmedd/pockethisaab/releases/download/v2.0.0/pockethisaab-v2.0.0.apk",
+  "latestVersion": "2.0.0",
+  "message": "PocketHisaab v2 is here \u2014 brand-new ledger engine, Import Inbox for auto-fetch, your own logo and floating wallet art, app lock + encrypted backups. Fresh start: v2 begins with a clean slate."
+}
