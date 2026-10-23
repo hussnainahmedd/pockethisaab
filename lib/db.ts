@@ -1,229 +1,171 @@
-import * as SQLite from 'expo-sqlite';
-import * as FileSystem from 'expo-file-system/legacy';
+/**
+ * PocketHisaab data layer — v2 compatibility facade.
+ *
+ * Screens built for v1 keep importing this module with the same function
+ * signatures, but every financial read and write now runs on the v2
+ * double-entry ledger (lib/finance):
+ *
+ * - Amounts cross this boundary in rupees (legacy UI convention) and are
+ *   converted to integer paisa immediately; nothing inside the ledger
+ *   uses floats.
+ * - Deletes and edits are append-only REVERSALS in the ledger; history
+ *   is never destroyed.
+ * - Dashboard "balance" is now true net worth (cash + receivables -
+ *   payables) computed by the single reporting service every screen
+ *   shares, so Home, Expenses and Stats can no longer disagree.
+ * - v1 numeric IDs are durable aliases for v2 UUIDs (legacy_refs), so
+ *   edit screens that pass IDs through route params keep working.
+ * - App meta (update prompts, auto-fetch settings/dedup) still lives in
+ *   the legacy store; the legacy FINANCIAL tables are no longer read or
+ *   written. The legacy database file itself is never deleted by this
+ *   module — discarding it is a separate owner-approved procedure.
+ */
 import { localMonthPrefix } from './format';
-import { decText, encText, getEncryptionKey, isEncrypted } from './crypto';
+import { getLedger } from './finance/appLedger';
+import { minorToRupees, rupeesToMinor } from './finance/money';
+import { monthPrefixOfDate } from './finance/repository';
+import type { Loan, Transaction } from './finance/types';
+import {
+  CATEGORIES,
+  INCOME_SOURCES,
+  categoryLabel,
+  getDb,
+  getMetaValue,
+  hasSeenAutofetch,
+  initDatabase as initLegacyDatabase,
+  markAutofetchSeen,
+  setMetaValue,
+  type ActivityItem,
+  type CategoryKey,
+  type DashboardSummary,
+  type Expense,
+  type Income,
+  type PersonSummary,
+  type UdhaarDirection,
+  type UdhaarEntry,
+} from './legacyDb';
+
+export {
+  CATEGORIES,
+  INCOME_SOURCES,
+  categoryLabel,
+  getDb,
+  getMetaValue,
+  hasSeenAutofetch,
+  markAutofetchSeen,
+  setMetaValue,
+};
+export type {
+  ActivityItem,
+  CategoryKey,
+  DashboardSummary,
+  Expense,
+  Income,
+  PersonSummary,
+  UdhaarDirection,
+  UdhaarEntry,
+};
+export { categoryEmoji } from './legacyDb';
 
 /* ------------------------------------------------------------------ */
-/* Types                                                               */
+/* Init: legacy meta store (settings/update state) + v2 ledger.        */
+/* Neither step deletes anything.                                      */
 /* ------------------------------------------------------------------ */
-
-export type UdhaarDirection = 'lent' | 'borrowed';
-
-export interface Income {
-  id: number;
-  amount: number;
-  source: string;
-  note: string | null;
-  date: string; // YYYY-MM-DD
-  origin: string; // 'manual' | 'auto'
-}
-
-export interface Expense {
-  id: number;
-  amount: number;
-  category: string;
-  note: string | null;
-  date: string; // YYYY-MM-DD
-  origin: string; // 'manual' | 'auto'
-}
-
-export interface UdhaarEntry {
-  id: number;
-  person: string;
-  amount: number;
-  direction: UdhaarDirection;
-  note: string | null;
-  date: string; // YYYY-MM-DD
-  settled: number; // 0 | 1
-}
-
-export interface PersonSummary {
-  name: string;
-  lent: number; // open lent total (they owe me)
-  borrowed: number; // open borrowed total (I owe them)
-  net: number; // lent - borrowed; positive = they owe me
-  openCount: number;
-}
-
-export interface DashboardSummary {
-  totalIncome: number;
-  totalExpenses: number;
-  totalLent: number;
-  totalBorrowed: number;
-  balance: number;
-  monthIncome: number;
-  monthExpenses: number;
-}
-
-export interface ActivityItem {
-  kind: 'income' | 'expense' | 'udhaar';
-  id: number;
-  amount: number;
-  label: string;
-  sublabel: string;
-  date: string;
-  origin: string; // 'manual' | 'auto'
-}
-
-/* ------------------------------------------------------------------ */
-/* Connection                                                          */
-/* ------------------------------------------------------------------ */
-
-let db: SQLite.SQLiteDatabase | null = null;
-
-export function getDb(): SQLite.SQLiteDatabase {
-  if (!db) {
-    db = SQLite.openDatabaseSync('pockethisaab.db');
-  }
-  return db;
-}
 
 export async function initDatabase(): Promise<void> {
-  const database = getDb();
-  await database.execAsync(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS income (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      amount REAL NOT NULL,
-      source TEXT NOT NULL,
-      note TEXT,
-      date TEXT NOT NULL,
-      origin TEXT NOT NULL DEFAULT 'manual'
-    );
-    CREATE TABLE IF NOT EXISTS expenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      amount REAL NOT NULL,
-      category TEXT NOT NULL,
-      note TEXT,
-      date TEXT NOT NULL,
-      origin TEXT NOT NULL DEFAULT 'manual'
-    );
-    CREATE TABLE IF NOT EXISTS udhaar (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      person TEXT NOT NULL,
-      amount REAL NOT NULL,
-      direction TEXT NOT NULL CHECK (direction IN ('lent', 'borrowed')),
-      note TEXT,
-      date TEXT NOT NULL,
-      settled INTEGER NOT NULL DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(date);
-    CREATE INDEX IF NOT EXISTS idx_income_date ON income(date);
-    CREATE INDEX IF NOT EXISTS idx_udhaar_person ON udhaar(person);
-    CREATE INDEX IF NOT EXISTS idx_udhaar_date ON udhaar(date);
-    CREATE TABLE IF NOT EXISTS meta (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS autofetch_seen (
-      key TEXT PRIMARY KEY,
-      created_at INTEGER NOT NULL
-    );
-  `);
-  // v1.1.0 migration: 'origin' column for auto-fetched entries (fresh installs
-  // get it from CREATE TABLE above; existing DBs get it here).
-  for (const t of ['income', 'expenses']) {
-    try {
-      await database.execAsync(`ALTER TABLE ${t} ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual'`);
-    } catch {
-      // Column already exists — nothing to do.
-    }
-  }
-  await ensureEncryption();
+  await initLegacyDatabase();
+  await getLedger().init();
 }
 
 /* ------------------------------------------------------------------ */
-/* Encryption migration (one-time, v1)                                  */
-/*                                                                      */
-/* First launch after this update: takes a file backup of the database, */
-/* then encrypts every text field that identifies WHO the money        */
-/* relates to (udhaar person names, income sources, all notes) inside   */
-/* one transaction. Any failure rolls back and the app keeps working    */
-/* on the plaintext database — data is never left half-migrated.       */
+/* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 
-const ENC_FLAG = 'enc_v1';
+const ledger = () => getLedger();
 
-async function ensureEncryption(): Promise<void> {
-  try {
-    await ensureEncryptionInner();
-  } catch {
-    // Encryption setup must never brick the app: if the device key can't be
-    // created (e.g. secure RNG unavailable), stay on the plaintext database
-    // and retry on the next launch. The enc_v1 flag is only set after a
-    // successful migration, so data is never half-migrated.
-  }
+/** Local date (YYYY-MM-DD) at noon — avoids timezone edges at midnight. */
+function dateToMs(date: string): number {
+  return new Date(`${date}T12:00:00`).getTime();
 }
 
-async function ensureEncryptionInner(): Promise<void> {
-  const database = getDb();
-  // Make sure the device key exists before touching any data.
-  await getEncryptionKey();
+function categoryKeyForName(name: string | null | undefined): string {
+  if (!name) return 'other';
+  const found = CATEGORIES.find((c) => c.label.toLowerCase() === name.toLowerCase());
+  return found?.key ?? 'other';
+}
 
-  const flag = await database.getAllAsync<{ value: string }>(
-    'SELECT value FROM meta WHERE key = ?',
-    [ENC_FLAG],
-  );
-  if (flag[0]?.value === '1') return;
+async function expenseCategoryId(categoryKey: string): Promise<string | null> {
+  const cat = CATEGORIES.find((c) => c.key === categoryKey);
+  const label = cat?.label ?? categoryLabel(categoryKey);
+  const found = await ledger().getCategoryByName(label, 'expense');
+  return found?.id ?? null;
+}
 
-  // Best-effort file backup before the first migration.
-  try {
-    const dbPath = `${FileSystem.documentDirectory}SQLite/pockethisaab.db`;
-    const backupPath = `${FileSystem.documentDirectory}SQLite/pockethisaab.backup-pre-enc.db`;
-    await FileSystem.copyAsync({ from: dbPath, to: backupPath });
-  } catch {
-    // Backup is a safety net, not a requirement — migration continues.
-  }
+async function incomeCategoryId(source: string): Promise<string | null> {
+  const label = source === 'Other' ? 'Other Income' : source;
+  const found = await ledger().getCategoryByName(label, 'income');
+  return found?.id ?? null;
+}
 
-  await database.execAsync('BEGIN');
-  try {
-    const incomeRows = await database.getAllAsync<{ id: number; source: string; note: string | null }>(
-      'SELECT id, source, note FROM income',
-    );
-    for (const r of incomeRows) {
-      if (isEncrypted(r.source) && (r.note == null || isEncrypted(r.note))) continue;
-      await database.runAsync('UPDATE income SET source = ?, note = ? WHERE id = ?', [
-        await encText(r.source),
-        await encText(r.note),
-        r.id,
-      ]);
-    }
+async function categoryName(categoryId: string | null): Promise<string | null> {
+  if (!categoryId) return null;
+  const cats = await ledger().listCategories();
+  return cats.find((c) => c.id === categoryId)?.name ?? null;
+}
 
-    const expenseRows = await database.getAllAsync<{ id: number; note: string | null }>(
-      'SELECT id, note FROM expenses',
-    );
-    for (const r of expenseRows) {
-      if (r.note == null || isEncrypted(r.note)) continue;
-      await database.runAsync('UPDATE expenses SET note = ? WHERE id = ?', [
-        await encText(r.note),
-        r.id,
-      ]);
-    }
+function asOrigin(origin: string): 'manual' | 'auto' {
+  return origin === 'auto' ? 'auto' : 'manual';
+}
 
-    const udhaarRows = await database.getAllAsync<{ id: number; person: string; note: string | null }>(
-      'SELECT id, person, note FROM udhaar',
-    );
-    for (const r of udhaarRows) {
-      if (isEncrypted(r.person) && (r.note == null || isEncrypted(r.note))) continue;
-      await database.runAsync('UPDATE udhaar SET person = ?, note = ? WHERE id = ?', [
-        await encText(r.person),
-        await encText(r.note),
-        r.id,
-      ]);
-    }
+async function txnToExpense(t: Transaction): Promise<Expense> {
+  return {
+    id: await ledger().legacyId('transaction', t.id),
+    amount: minorToRupees(t.amountMinor),
+    category: categoryKeyForName(await categoryName(t.categoryId)),
+    note: t.note,
+    date: t.localDate,
+    origin: t.origin,
+  };
+}
 
-    await database.runAsync('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [ENC_FLAG, '1']);
-    await database.execAsync('COMMIT');
-  } catch (e) {
-    await database.execAsync('ROLLBACK');
-    // Fail open: the app keeps working on the unencrypted database rather
-    // than risking data loss. Migration will be retried next launch.
-    console.warn('Ledger encryption migration failed, continuing unencrypted:', e);
-  }
+async function txnToIncome(t: Transaction): Promise<Income> {
+  const name = await categoryName(t.categoryId);
+  return {
+    id: await ledger().legacyId('transaction', t.id),
+    amount: minorToRupees(t.amountMinor),
+    source: name ?? t.counterparty ?? 'Other',
+    note: t.note,
+    date: t.localDate,
+    origin: t.origin,
+  };
+}
+
+async function loanToEntry(loan: Loan): Promise<UdhaarEntry> {
+  return {
+    id: await ledger().legacyId('loan', loan.id),
+    person: loan.personName,
+    amount: minorToRupees(loan.principalMinor),
+    direction: loan.direction,
+    note: loan.note,
+    date: loan.localDate,
+    settled: loan.status === 'settled' ? 1 : 0,
+  };
+}
+
+async function resolveTxnId(legacyId: number): Promise<string> {
+  const id = await ledger().refForLegacyId('transaction', legacyId);
+  if (!id) throw new Error('Entry not found.');
+  return id;
+}
+
+async function resolveLoanId(legacyId: number): Promise<string> {
+  const id = await ledger().refForLegacyId('loan', legacyId);
+  if (!id) throw new Error('Udhaar entry not found.');
+  return id;
 }
 
 /* ------------------------------------------------------------------ */
-/* Writes                                                              */
+/* Income                                                              */
 /* ------------------------------------------------------------------ */
 
 export async function addIncome(
@@ -233,63 +175,23 @@ export async function addIncome(
   date: string,
   origin: string = 'manual',
 ): Promise<void> {
-  await getDb().runAsync('INSERT INTO income (source, amount, note, date, origin) VALUES (?, ?, ?, ?, ?)', [
-    await encText(source),
-    amount,
-    (await encText(note)) || null,
-    date,
-    origin,
-  ]);
-}
-
-export async function addExpense(
-  amount: number,
-  category: string,
-  note: string,
-  date: string,
-  origin: string = 'manual',
-): Promise<void> {
-  await getDb().runAsync('INSERT INTO expenses (amount, category, note, date, origin) VALUES (?, ?, ?, ?, ?)', [
-    amount,
-    category,
-    (await encText(note)) || null,
-    date,
-    origin,
-  ]);
-}
-
-export async function deleteExpense(id: number): Promise<void> {
-  await getDb().runAsync('DELETE FROM expenses WHERE id = ?', [id]);
-}
-
-export async function getExpenseById(id: number): Promise<Expense | null> {
-  const rows = await getDb().getAllAsync<Expense>('SELECT * FROM expenses WHERE id = ?', [id]);
-  const r = rows[0];
-  if (!r) return null;
-  return { ...r, note: await decText(r.note) };
-}
-
-export async function updateExpense(
-  id: number,
-  amount: number,
-  category: string,
-  note: string,
-  date: string,
-): Promise<void> {
-  await getDb().runAsync('UPDATE expenses SET amount = ?, category = ?, note = ?, date = ? WHERE id = ?', [
-    amount,
-    category,
-    (await encText(note)) || null,
-    date,
-    id,
-  ]);
+  const wallet = await ledger().getDefaultWallet();
+  await ledger().addIncome({
+    walletId: wallet.id,
+    amountMinor: rupeesToMinor(amount),
+    categoryId: await incomeCategoryId(source),
+    counterparty: source,
+    note: note || null,
+    occurredAt: dateToMs(date),
+    origin: asOrigin(origin),
+  });
 }
 
 export async function getAllIncome(): Promise<Income[]> {
-  const rows = await getDb().getAllAsync<Income>('SELECT * FROM income ORDER BY date DESC, id DESC');
-  return Promise.all(
-    rows.map(async (r) => ({ ...r, source: (await decText(r.source)) ?? '', note: await decText(r.note) })),
-  );
+  const txns = await ledger().listTransactions({ classification: 'income', limit: 500 });
+  const out: Income[] = [];
+  for (const t of txns) out.push(await txnToIncome(t));
+  return out;
 }
 
 export async function updateIncome(
@@ -299,81 +201,119 @@ export async function updateIncome(
   note: string,
   date: string,
 ): Promise<void> {
-  await getDb().runAsync('UPDATE income SET source = ?, amount = ?, note = ?, date = ? WHERE id = ?', [
-    await encText(source),
-    amount,
-    (await encText(note)) || null,
-    date,
-    id,
-  ]);
+  const originalId = await resolveTxnId(id);
+  const original = await ledger().getTransaction(originalId);
+  await ledger().reverseTransaction(originalId, { note: 'Edited' });
+  const wallet = await ledger().getDefaultWallet();
+  const created = await ledger().addIncome({
+    walletId: wallet.id,
+    amountMinor: rupeesToMinor(amount),
+    categoryId: await incomeCategoryId(source),
+    counterparty: source,
+    note: note || null,
+    occurredAt: dateToMs(date),
+    origin: original?.origin === 'auto' ? 'auto' : 'manual',
+  });
+  await ledger().remapLegacyId('transaction', id, created.transaction.id);
 }
 
 export async function deleteIncome(id: number): Promise<void> {
-  await getDb().runAsync('DELETE FROM income WHERE id = ?', [id]);
+  await ledger().reverseTransaction(await resolveTxnId(id), { note: 'Deleted' });
 }
 
-/** Delete ALL income entries (reset Pocket Money). No confirmation here — the UI must ask. */
 export async function deleteAllIncome(): Promise<void> {
-  await getDb().runAsync('DELETE FROM income');
+  for (;;) {
+    const txns = await ledger().listTransactions({ classification: 'income', limit: 200 });
+    if (txns.length === 0) return;
+    for (const t of txns) await ledger().reverseTransaction(t.id, { note: 'Reset all income' });
+  }
 }
 
-/** Delete ALL expense entries (reset Expenses). No confirmation here — the UI must ask. */
-export async function deleteAllExpenses(): Promise<void> {
-  await getDb().runAsync('DELETE FROM expenses');
-}
+/* ------------------------------------------------------------------ */
+/* Expenses                                                            */
+/* ------------------------------------------------------------------ */
 
-/** Delete ALL udhaar entries (reset Udhaar). No confirmation here — the UI must ask. */
-export async function deleteAllUdhaar(): Promise<void> {
-  await getDb().runAsync('DELETE FROM udhaar');
-}
-
-/**
- * Find a recent auto-added entry with the exact same amount on the given
- * date (used for self-transfer detection: money moved between the user's
- * own accounts shows up as an out+in pair that should both be skipped).
- */
-export async function findAutoIncomeByAmount(amount: number, date: string): Promise<Income | null> {
-  const rows = await getDb().getAllAsync<Income>(
-    "SELECT * FROM income WHERE origin='auto' AND amount=? AND date=? ORDER BY id DESC LIMIT 1",
-    [amount, date],
-  );
-  return rows[0] ?? null;
-}
-
-export async function findAutoExpenseByAmount(amount: number, date: string): Promise<Expense | null> {
-  const rows = await getDb().getAllAsync<Expense>(
-    "SELECT * FROM expenses WHERE origin='auto' AND amount=? AND date=? ORDER BY id DESC LIMIT 1",
-    [amount, date],
-  );
-  return rows[0] ?? null;
-}
-
-export async function getUdhaarById(id: number): Promise<UdhaarEntry | null> {
-  const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar WHERE id = ?', [id]);
-  const r = rows[0];
-  if (!r) return null;
-  return { ...r, person: (await decText(r.person)) ?? '', note: await decText(r.note) };
-}
-
-export async function updateUdhaar(
-  id: number,
-  person: string,
+export async function addExpense(
   amount: number,
-  direction: UdhaarDirection,
+  category: string,
+  note: string,
+  date: string,
+  origin: string = 'manual',
+): Promise<void> {
+  const wallet = await ledger().getDefaultWallet();
+  await ledger().addExpense({
+    walletId: wallet.id,
+    amountMinor: rupeesToMinor(amount),
+    categoryId: await expenseCategoryId(category),
+    counterparty: null,
+    note: note || null,
+    occurredAt: dateToMs(date),
+    origin: asOrigin(origin),
+  });
+}
+
+export async function getExpenseById(id: number): Promise<Expense | null> {
+  const ref = await ledger().refForLegacyId('transaction', id);
+  if (!ref) return null;
+  const t = await ledger().getTransaction(ref);
+  if (!t || t.status !== 'posted' || t.reversesTransactionId) return null;
+  return txnToExpense(t);
+}
+
+export async function updateExpense(
+  id: number,
+  amount: number,
+  category: string,
   note: string,
   date: string,
 ): Promise<void> {
-  // Slashes would break the /person/[name] route, so flatten them.
-  const cleanPerson = person.trim().replace(/\//g, ' ');
-  await getDb().runAsync(
-    'UPDATE udhaar SET person = ?, amount = ?, direction = ?, note = ?, date = ? WHERE id = ?',
-    [await encText(cleanPerson), amount, direction, (await encText(note)) || null, date, id],
-  );
+  const originalId = await resolveTxnId(id);
+  const original = await ledger().getTransaction(originalId);
+  await ledger().reverseTransaction(originalId, { note: 'Edited' });
+  const wallet = await ledger().getDefaultWallet();
+  const created = await ledger().addExpense({
+    walletId: wallet.id,
+    amountMinor: rupeesToMinor(amount),
+    categoryId: await expenseCategoryId(category),
+    note: note || null,
+    occurredAt: dateToMs(date),
+    origin: original?.origin === 'auto' ? 'auto' : 'manual',
+  });
+  await ledger().remapLegacyId('transaction', id, created.transaction.id);
 }
 
-export async function deleteUdhaar(id: number): Promise<void> {
-  await getDb().runAsync('DELETE FROM udhaar WHERE id = ?', [id]);
+export async function deleteExpense(id: number): Promise<void> {
+  await ledger().reverseTransaction(await resolveTxnId(id), { note: 'Deleted' });
 }
+
+export async function deleteAllExpenses(): Promise<void> {
+  for (const classification of ['expense', 'fee'] as const) {
+    for (;;) {
+      const txns = await ledger().listTransactions({ classification, limit: 200 });
+      if (txns.length === 0) break;
+      for (const t of txns) await ledger().reverseTransaction(t.id, { note: 'Reset all expenses' });
+    }
+  }
+}
+
+export async function getExpenses(monthPrefix: string, category: string | null): Promise<Expense[]> {
+  const [expenses, fees] = await Promise.all([
+    ledger().listTransactions({ classification: 'expense', monthPrefix, limit: 500 }),
+    ledger().listTransactions({ classification: 'fee', monthPrefix, limit: 500 }),
+  ]);
+  const merged = [...expenses, ...fees].sort((a, b) => b.occurredAt - a.occurredAt || b.createdAt - a.createdAt);
+  const out: Expense[] = [];
+  for (const t of merged) {
+    const e = await txnToExpense(t);
+    if (category && e.category !== category) continue;
+    out.push(e);
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Udhaar (loans)                                                      */
+/* ------------------------------------------------------------------ */
 
 export async function addUdhaar(
   person: string,
@@ -384,259 +324,225 @@ export async function addUdhaar(
 ): Promise<void> {
   // Slashes would break the /person/[name] route, so flatten them.
   const cleanPerson = person.trim().replace(/\//g, ' ');
-  await getDb().runAsync(
-    'INSERT INTO udhaar (person, amount, direction, note, date, settled) VALUES (?, ?, ?, ?, ?, 0)',
-    [await encText(cleanPerson), amount, direction, (await encText(note)) || null, date],
-  );
+  const wallet = await ledger().getDefaultWallet();
+  const input = {
+    personName: cleanPerson,
+    walletId: wallet.id,
+    amountMinor: rupeesToMinor(amount),
+    note: note || null,
+    occurredAt: dateToMs(date),
+  };
+  if (direction === 'lent') await ledger().lend(input);
+  else await ledger().borrow(input);
 }
 
+export async function getUdhaarById(id: number): Promise<UdhaarEntry | null> {
+  const ref = await ledger().refForLegacyId('loan', id);
+  if (!ref) return null;
+  const loan = await ledger().getLoan(ref);
+  if (!loan || loan.status === 'void') return null;
+  return loanToEntry(loan);
+}
+
+export async function updateUdhaar(
+  id: number,
+  person: string,
+  amount: number,
+  direction: UdhaarDirection,
+  note: string,
+  date: string,
+): Promise<void> {
+  const loanId = await resolveLoanId(id);
+  const loan = await ledger().getLoan(loanId);
+  if (!loan) throw new Error('Udhaar entry not found.');
+  const remaining = await ledger().getLoanRemainingMinor(loanId);
+  if (remaining !== loan.principalMinor) {
+    // Editing principal/direction under existing repayments would rewrite
+    // settled history. M3's native repayment UI handles those loans.
+    throw new Error('This entry already has repayments, so it cannot be edited here yet.');
+  }
+  const cleanPerson = person.trim().replace(/\//g, ' ');
+  await ledger().voidLoan(loanId);
+  const wallet = await ledger().getDefaultWallet();
+  const input = {
+    personName: cleanPerson,
+    walletId: loan.walletId ?? wallet.id,
+    amountMinor: rupeesToMinor(amount),
+    note: note || null,
+    occurredAt: dateToMs(date),
+  };
+  const created = direction === 'lent' ? await ledger().lend(input) : await ledger().borrow(input);
+  await ledger().remapLegacyId('loan', id, created.id);
+}
+
+export async function deleteUdhaar(id: number): Promise<void> {
+  await ledger().voidLoan(await resolveLoanId(id));
+}
+
+export async function deleteAllUdhaar(): Promise<void> {
+  const loans = await ledger().listLoans();
+  for (const loan of loans) {
+    if (loan.status !== 'void') await ledger().voidLoan(loan.id);
+  }
+}
+
+/**
+ * Settle/unsettle now moves real money through the ledger:
+ * settling records a full repayment for the exact remaining balance;
+ * unsettling reverses that settlement repayment. (v1 only flipped a flag,
+ * which moved the displayed balance the wrong way for borrowed money.)
+ */
 export async function setUdhaarSettled(id: number, settled: boolean): Promise<void> {
-  await getDb().runAsync('UPDATE udhaar SET settled = ? WHERE id = ?', [settled ? 1 : 0, id]);
+  const loanId = await resolveLoanId(id);
+  const loan = await ledger().getLoan(loanId);
+  if (!loan || loan.status === 'void') throw new Error('Udhaar entry not found.');
+  if (settled) {
+    const remaining = await ledger().getLoanRemainingMinor(loanId);
+    if (remaining > 0) {
+      await ledger().recordRepayment({ loanId, amountMinor: remaining, note: 'Settled' });
+    }
+  } else if (loan.settlementTransactionId) {
+    await ledger().reverseTransaction(loan.settlementTransactionId, { note: 'Settlement undone' });
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/* Reads                                                               */
+/* Auto-fetch compatibility                                            */
+/*                                                                     */
+/* v1's same-amount IN/OUT pairing deleted legitimate records (M1      */
+/* finding P0-3). It is disabled: these lookups now always miss, so    */
+/* the auto-fetch service can never delete a ledger entry. M4         */
+/* replaces pairing with explicit transfer classification.            */
 /* ------------------------------------------------------------------ */
 
-function sum(rows: { total: number | null }[]): number {
-  const v = rows[0]?.total;
-  return typeof v === 'number' ? v : 0;
+export async function findAutoIncomeByAmount(_amount: number, _date: string): Promise<Income | null> {
+  return null;
 }
+
+export async function findAutoExpenseByAmount(_amount: number, _date: string): Promise<Expense | null> {
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reporting — all screens read the same ledger reporting service     */
+/* ------------------------------------------------------------------ */
 
 export async function getDashboardSummary(now = new Date()): Promise<DashboardSummary> {
-  const database = getDb();
-  const monthPrefix = localMonthPrefix(now); // YYYY-MM, local time
-
-  const totalIncome = sum(await database.getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM income'));
-  const totalExpenses = sum(await database.getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM expenses'));
-  const totalLent = sum(
-    await database.getAllAsync<{ total: number | null }>(
-      "SELECT SUM(amount) AS total FROM udhaar WHERE direction = 'lent' AND settled = 0",
-    ),
-  );
-  const totalBorrowed = sum(
-    await database.getAllAsync<{ total: number | null }>(
-      "SELECT SUM(amount) AS total FROM udhaar WHERE direction = 'borrowed' AND settled = 0",
-    ),
-  );
-  const monthIncome = sum(
-    await database.getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM income WHERE date LIKE ?', [
-      `${monthPrefix}%`,
-    ]),
-  );
-  const monthExpenses = sum(
-    await database.getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM expenses WHERE date LIKE ?', [
-      `${monthPrefix}%`,
-    ]),
-  );
-
+  const monthPrefix = localMonthPrefix(now);
+  const dash = await ledger().getDashboard(monthPrefix);
+  const totals = await ledger().getAllTimeTotals();
   return {
-    totalIncome,
-    totalExpenses,
-    totalLent,
-    totalBorrowed,
-    balance: totalIncome - totalExpenses - totalLent - totalBorrowed,
-    monthIncome,
-    monthExpenses,
+    totalIncome: minorToRupees(totals.incomeMinor),
+    totalExpenses: minorToRupees(totals.expensesMinor),
+    totalLent: minorToRupees(dash.receivablesMinor),
+    totalBorrowed: minorToRupees(dash.payablesMinor),
+    balance: minorToRupees(dash.netWorthMinor),
+    monthIncome: minorToRupees(dash.monthIncomeMinor),
+    monthExpenses: minorToRupees(dash.monthExpensesMinor),
   };
 }
 
 export async function getPeople(): Promise<PersonSummary[]> {
-  // Person names are encrypted at rest, so grouping happens in JS after decrypt.
-  const rows = await getDb().getAllAsync<{ person: string; direction: UdhaarDirection; amount: number }>(
-    'SELECT person, direction, amount FROM udhaar WHERE settled = 0',
-  );
-  const byName = new Map<string, PersonSummary>();
-  for (const r of rows) {
-    const name = (await decText(r.person)) ?? '';
-    let s = byName.get(name);
-    if (!s) {
-      s = { name, lent: 0, borrowed: 0, net: 0, openCount: 0 };
-      byName.set(name, s);
-    }
-    if (r.direction === 'lent') s.lent += r.amount;
-    else s.borrowed += r.amount;
-    s.openCount += 1;
-  }
-  const out = [...byName.values()];
-  for (const s of out) s.net = s.lent - s.borrowed;
-  out.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
-  return out;
+  const summaries = await ledger().getPersonSummaries();
+  return summaries.map((s) => ({
+    name: s.person.name,
+    lent: minorToRupees(s.lentMinor),
+    borrowed: minorToRupees(s.borrowedMinor),
+    net: minorToRupees(s.netMinor),
+    openCount: s.openCount,
+  }));
 }
 
 export async function getPersonEntries(name: string): Promise<UdhaarEntry[]> {
-  const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar ORDER BY date DESC, id DESC');
+  const person = await ledger().getPersonByName(name);
+  if (!person) return [];
+  const loans = await ledger().listLoans({ personId: person.id });
   const out: UdhaarEntry[] = [];
-  for (const r of rows) {
-    const person = await decText(r.person);
-    if (person === name) out.push({ ...r, person: person ?? '', note: await decText(r.note) });
+  for (const loan of loans) {
+    if (loan.status === 'void') continue;
+    out.push(await loanToEntry(loan));
   }
   return out;
 }
 
 export async function getPersonTotals(name: string): Promise<{ lent: number; borrowed: number; settled: number }> {
-  const rows = await getDb().getAllAsync<UdhaarEntry>('SELECT * FROM udhaar');
+  const person = await ledger().getPersonByName(name);
+  if (!person) return { lent: 0, borrowed: 0, settled: 0 };
+  const loans = await ledger().listLoans({ personId: person.id });
   let lent = 0;
   let borrowed = 0;
   let settled = 0;
-  for (const r of rows) {
-    if ((await decText(r.person)) !== name) continue;
-    if (r.settled) {
-      settled += 1;
-    } else if (r.direction === 'lent') {
-      lent += r.amount;
-    } else {
-      borrowed += r.amount;
+  for (const loan of loans) {
+    if (loan.status === 'void') continue;
+    if (loan.status === 'settled') {
+      settled += 1; // legacy semantic: count of settled entries
+      continue;
     }
+    const remaining = await ledger().getLoanRemainingMinor(loan.id);
+    if (loan.direction === 'lent') lent += remaining;
+    else borrowed += remaining;
   }
-  return { lent, borrowed, settled };
+  return { lent: minorToRupees(lent), borrowed: minorToRupees(borrowed), settled };
 }
 
-export async function getExpenses(monthPrefix: string, category: string | null): Promise<Expense[]> {
-  let rows: Expense[];
-  if (category) {
-    rows = await getDb().getAllAsync<Expense>(
-      'SELECT * FROM expenses WHERE date LIKE ? AND category = ? ORDER BY date DESC, id DESC',
-      [`${monthPrefix}%`, category],
-    );
-  } else {
-    rows = await getDb().getAllAsync<Expense>('SELECT * FROM expenses WHERE date LIKE ? ORDER BY date DESC, id DESC', [
-      `${monthPrefix}%`,
-    ]);
-  }
-  return Promise.all(rows.map(async (r) => ({ ...r, note: await decText(r.note) })));
+export async function getMonthlyStats(monthsBack: number): Promise<{ month: string; income: number; expenses: number }[]> {
+  const stats = await ledger().getMonthlyStats(monthsBack);
+  return stats.map((s) => ({
+    month: s.month,
+    income: minorToRupees(s.incomeMinor),
+    expenses: minorToRupees(s.expensesMinor),
+  }));
 }
 
-export async function getMonthlyStats(monthsBack: number): Promise<
-  { month: string; income: number; expenses: number }[]
-> {
-  const out: { month: string; income: number; expenses: number }[] = [];
-  const now = new Date();
-  for (let i = monthsBack - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const prefix = localMonthPrefix(d);
-    const income = sum(
-      await getDb().getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM income WHERE date LIKE ?', [
-        `${prefix}%`,
-      ]),
-    );
-    const expenses = sum(
-      await getDb().getAllAsync<{ total: number | null }>('SELECT SUM(amount) AS total FROM expenses WHERE date LIKE ?', [
-        `${prefix}%`,
-      ]),
-    );
-    out.push({ month: prefix, income, expenses });
+export async function getTopCategories(monthPrefix: string, limit = 5): Promise<{ category: string; total: number }[]> {
+  const rows = await ledger().getTopCategories(monthPrefix, limit);
+  return rows.map((r) => ({ category: categoryKeyForName(r.name), total: minorToRupees(r.totalMinor) }));
+}
+
+const LEDGER_ACTIVITY_LABEL: Partial<Record<Transaction['classification'], string>> = {
+  transfer: 'Transfer',
+  loan_lent: 'Lent',
+  loan_borrowed: 'Borrowed',
+  repayment_received: 'Repayment received',
+  repayment_made: 'Repayment made',
+  refund_received: 'Refund',
+  refund_issued: 'Refund issued',
+  balance_adjustment: 'Balance adjustment',
+  opening_balance: 'Opening balance',
+  fee: 'Fee',
+};
+
+export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
+  const txns = await ledger().listTransactions({ limit });
+  const out: ActivityItem[] = [];
+  for (const t of txns) {
+    const kind: ActivityItem['kind'] =
+      t.classification === 'income' || t.classification === 'refund_received'
+        ? 'income'
+        : t.classification === 'expense' || t.classification === 'fee' || t.classification === 'refund_issued'
+          ? 'expense'
+          : 'udhaar';
+    let label: string;
+    if (t.classification === 'income') label = (await categoryName(t.categoryId)) ?? t.counterparty ?? 'Income';
+    else if (t.classification === 'expense') label = categoryLabel(categoryKeyForName(await categoryName(t.categoryId)));
+    else if (t.loanId) {
+      const loan = await ledger().getLoan(t.loanId);
+      label = loan?.personName ?? t.counterparty ?? 'Udhaar';
+    } else label = t.counterparty ?? LEDGER_ACTIVITY_LABEL[t.classification] ?? t.classification;
+    out.push({
+      kind,
+      id: await ledger().legacyId('transaction', t.id),
+      amount: minorToRupees(t.amountMinor),
+      label,
+      sublabel: t.note ?? LEDGER_ACTIVITY_LABEL[t.classification] ?? label,
+      date: t.localDate,
+      origin: t.origin,
+    });
   }
   return out;
 }
 
-export async function getTopCategories(monthPrefix: string, limit = 5): Promise<{ category: string; total: number }[]> {
-  return getDb().getAllAsync<{ category: string; total: number }>(
-    'SELECT category, SUM(amount) AS total FROM expenses WHERE date LIKE ? GROUP BY category ORDER BY total DESC LIMIT ?',
-    [`${monthPrefix}%`, limit],
-  );
-}
-
-export async function getRecentActivity(limit = 8): Promise<ActivityItem[]> {
-  const database = getDb();
-  const income = await database.getAllAsync<Income>('SELECT * FROM income ORDER BY date DESC, id DESC LIMIT ?', [limit]);
-  const expenses = await database.getAllAsync<Expense>('SELECT * FROM expenses ORDER BY date DESC, id DESC LIMIT ?', [limit]);
-  const udhaar = await database.getAllAsync<UdhaarEntry>('SELECT * FROM udhaar ORDER BY date DESC, id DESC LIMIT ?', [limit]);
-
-  const items: ActivityItem[] = [
-    ...(await Promise.all(
-      income.map(async (r) => ({
-        kind: 'income' as const,
-        id: r.id,
-        amount: r.amount,
-        label: (await decText(r.source)) ?? '',
-        sublabel: (await decText(r.note)) ?? 'Pocket money added',
-        date: r.date,
-        origin: r.origin ?? 'manual',
-      })),
-    )),
-    ...(await Promise.all(
-      expenses.map(async (r) => ({
-        kind: 'expense' as const,
-        id: r.id,
-        amount: r.amount,
-        label: categoryLabel(r.category),
-        sublabel: (await decText(r.note)) ?? 'Expense',
-        date: r.date,
-        origin: r.origin ?? 'manual',
-      })),
-    )),
-    ...(await Promise.all(
-      udhaar.map(async (r) => ({
-        kind: 'udhaar' as const,
-        id: r.id,
-        amount: r.amount,
-        label: (await decText(r.person)) ?? '',
-        sublabel:
-          r.direction === 'lent' ? `Lent${r.settled ? ' · settled' : ''}` : `Borrowed${r.settled ? ' · settled' : ''}`,
-        date: r.date,
-        origin: 'manual',
-      })),
-    )),
-  ];
-  items.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.id - a.id));
-  return items.slice(0, limit);
-}
-
-/* ------------------------------------------------------------------ */
-/* Category + source metadata                                          */
-/* ------------------------------------------------------------------ */
-
-export const CATEGORIES = [
-  { key: 'food', label: 'Food', emoji: '🍔' },
-  { key: 'transport', label: 'Transport', emoji: '🚌' },
-  { key: 'recharge', label: 'Recharge', emoji: '📱' },
-  { key: 'shopping', label: 'Shopping', emoji: '🛍️' },
-  { key: 'health', label: 'Health', emoji: '💊' },
-  { key: 'bills', label: 'Bills', emoji: '🧾' },
-  { key: 'other', label: 'Other', emoji: '📦' },
-] as const;
-
-export type CategoryKey = (typeof CATEGORIES)[number]['key'];
-
-export function categoryLabel(key: string): string {
-  return CATEGORIES.find((c) => c.key === key)?.label ?? 'Other';
-}
-
-export function categoryEmoji(key: string): string {
-  return CATEGORIES.find((c) => c.key === key)?.emoji ?? '📦';
-}
-
-export const INCOME_SOURCES = ['Pocket Money', 'Gift', 'Refund', 'Work', 'Other'];
-
-/* ------------------------------------------------------------------ */
-/* Meta key-value helpers                                              */
-/* ------------------------------------------------------------------ */
-
-export async function getMetaValue(key: string): Promise<string | null> {
-  const rows = await getDb().getAllAsync<{ value: string }>('SELECT value FROM meta WHERE key = ?', [key]);
-  return rows[0]?.value ?? null;
-}
-
-export async function setMetaValue(key: string, value: string): Promise<void> {
-  await getDb().runAsync('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', [key, value]);
-}
-
-/* ------------------------------------------------------------------ */
-/* Auto-fetch dedup store                                              */
-/* ------------------------------------------------------------------ */
-
-export async function hasSeenAutofetch(key: string): Promise<boolean> {
-  const rows = await getDb().getAllAsync<{ key: string }>('SELECT key FROM autofetch_seen WHERE key = ?', [key]);
-  return rows.length > 0;
-}
-
-export async function markAutofetchSeen(key: string): Promise<void> {
-  const database = getDb();
-  await database.runAsync('INSERT OR IGNORE INTO autofetch_seen (key, created_at) VALUES (?, ?)', [
-    key,
-    Date.now(),
-  ]);
-  // Prune keys older than 120 days so the table stays tiny.
-  await database.runAsync('DELETE FROM autofetch_seen WHERE created_at < ?', [Date.now() - 120 * 24 * 3600 * 1000]);
+/** Exposed for diagnostics: the monthly reporting prefix of a local date. */
+export function facadeMonthPrefix(localDate: string): string {
+  return monthPrefixOfDate(localDate);
 }

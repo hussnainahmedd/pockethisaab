@@ -121,6 +121,7 @@ export default function PersonDetail() {
               return (
                 <Pressable
                   key={e.id}
+                  onPress={() => router.push({ pathname: '/loan/[id]', params: { id: String(e.id) } })}
                   onLongPress={() => rowActions(e)}
                   delayLongPress={350}
                   style={[
@@ -187,7 +188,7 @@ export default function PersonDetail() {
         )}
         {entries.length > 0 && (
           <Text style={{ textAlign: 'center', color: C.inkFaint, fontSize: 12, marginTop: 14 }}>
-            Long-press an entry to edit or delete it.
+            Tap an entry to open the full loan · long-press to edit or delete it.
           </Text>
         )}
       </ScrollView>

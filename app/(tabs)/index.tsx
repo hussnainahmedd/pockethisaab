@@ -123,6 +123,38 @@ export default function Home() {
           <QuickAction emoji="💰" label="Pocket money" colors={['#0E9F6E', '#14B8A6']} onPress={() => router.push('/add-income')} />
           <QuickAction emoji="🤝" label="Udhaar" colors={['#8B5CF6', '#6D28D9']} onPress={() => router.push('/add-udhaar')} />
         </View>
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+          <QuickAction emoji="📤" label="Send" colors={['#0EA5E9', '#2563EB']} onPress={() => router.push('/send')} />
+          <QuickAction emoji="📥" label="Receive" colors={['#14B8A6', '#0D9488']} onPress={() => router.push('/receive')} />
+          <QuickAction emoji="🔁" label="Transfer" colors={['#F59E0B', '#D97706']} onPress={() => router.push('/transfer')} />
+        </View>
+
+        {/* Manage */}
+        <Text style={s.sectionTitle}>Manage 🧰</Text>
+        <Card style={{ paddingVertical: 6 }}>
+          {[
+            { emoji: '🧾', label: 'Transactions', sub: 'Search, filter, select & bulk actions', href: '/transactions' as const },
+            { emoji: '👛', label: 'Wallets', sub: 'Balances, opening balances, reconcile', href: '/wallets' as const },
+            { emoji: '👥', label: 'People', sub: 'Everyone you have udhaar with', href: '/people' as const },
+            { emoji: '🏷️', label: 'Categories', sub: 'Add, edit, archive categories', href: '/categories' as const },
+            { emoji: '🔒', label: 'Security & backup', sub: 'App lock, encrypted backups, restore', href: '/security' as const },
+          ].map((row, i, arr) => (
+            <Pressable
+              key={row.href}
+              onPress={() => router.push(row.href)}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            >
+              <View style={[s.row, { paddingVertical: 13, borderBottomWidth: i === arr.length - 1 ? 0 : 1, borderBottomColor: C.line }]}>
+                <Text style={{ fontSize: 21, marginRight: 13 }}>{row.emoji}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: C.ink }}>{row.label}</Text>
+                  <Text style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 2 }}>{row.sub}</Text>
+                </View>
+                <Text style={{ fontSize: 16, color: C.inkFaint, fontWeight: '800' }}>›</Text>
+              </View>
+            </Pressable>
+          ))}
+        </Card>
 
         {/* Auto-fetch */}
         <Pressable

@@ -76,3 +76,16 @@ export const NOTIF_APP_PACKAGES: { pkg: string; label: string }[] = [
 export function notifAppLabel(pkg: string): string {
   return NOTIF_APP_PACKAGES.find((a) => a.pkg === pkg)?.label ?? pkg;
 }
+
+const NOTIF_INSTITUTION_IDS: Record<string, string> = {
+  NayaPay: 'nayapay',
+  SadaPay: 'sadapay',
+  Finja: 'finja',
+  'Faysal Bank': 'faysal',
+};
+
+/** Stable institution id for import scoping (SMS uses the sender-rule id). */
+export function notifInstitutionId(pkg: string): string {
+  const label = notifAppLabel(pkg);
+  return NOTIF_INSTITUTION_IDS[label] ?? label.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}

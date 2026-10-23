@@ -8,6 +8,7 @@
 import type { SenderRule } from './senders';
 
 export type Direction = 'in' | 'out';
+export type TxnStatus = 'completed' | 'pending' | 'failed';
 
 export interface ParsedTransaction {
   amount: number;
@@ -25,6 +26,28 @@ export interface ParsedTransaction {
   incomeSource: string;
   /** epoch ms of the transaction */
   dateMs: number;
+  /**
+   * Completion status reported by the bank. 'failed' and 'pending'
+   * parses must NEVER be posted as completed transactions (M4 rule).
+   */
+  status: TxnStatus;
+  /** Account discriminator like 'acct8588' when the message names one. */
+  accountHint: string | null;
+}
+
+const FAILED_RE = /(transaction|payment|transfer)?[^.]{0,40}\b(failed|unsuccessful|declined|rejected)\b|\bnot successful\b|could not be processed/i;
+const PENDING_RE = /\b(pending|processing|in progress|on hold)\b/i;
+
+export function detectStatus(body: string): TxnStatus {
+  if (FAILED_RE.test(body)) return 'failed';
+  if (PENDING_RE.test(body)) return 'pending';
+  return 'completed';
+}
+
+/** Conservative account-hint extraction (e.g. "FBL A/C *8588" → 'acct8588'). */
+export function extractAccountHint(body: string): string | null {
+  const m = body.match(/(?:A\/C\s*\*?|from\s+\*)(\d{4})/i);
+  return m ? `acct${m[1]}` : null;
 }
 
 const AMT = '([\\d,]+(?:\\.\\d{1,2})?)';
@@ -201,6 +224,8 @@ export function parseSmsBody(rule: SenderRule, body: string, dateMs: number): Pa
       category: t.forceCategory ?? suggestCategory(counterparty, body),
       incomeSource: suggestIncomeSource(body),
       dateMs,
+      status: detectStatus(body),
+      accountHint: extractAccountHint(body),
     };
   }
   return null;
@@ -279,6 +304,8 @@ export function parseNotificationBody(
       category: suggestCategory(counterparty, body),
       incomeSource: suggestIncomeSource(body),
       dateMs: postTime,
+      status: detectStatus(body),
+      accountHint: extractAccountHint(body),
     };
   }
   return null;

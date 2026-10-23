@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { C, s } from '../components/theme';
 import { Card, GhostButton } from '../components/ui';
 import {
+  META_AUTOCONFIRM,
   META_NOTIF,
   META_SMS,
   hasNotificationAccess,
@@ -16,6 +17,7 @@ import {
   setSmsChannelEnabled,
 } from '../lib/autofetch/service';
 import { getMetaValue, setMetaValue } from '../lib/db';
+import { getLedger } from '../lib/finance/appLedger';
 import { isAutofetchNativeAvailable, openNotificationListenerSettings } from '../modules/transaction-autofetch/src';
 
 export default function AutofetchSettings() {
@@ -25,22 +27,25 @@ export default function AutofetchSettings() {
   const [notifOn, setNotifOn] = useState(false);
   const [smsGranted, setSmsGranted] = useState(false);
   const [notifGranted, setNotifGranted] = useState(false);
-  const [skipSelf, setSkipSelf] = useState(true);
+  const [autoConfirm, setAutoConfirm] = useState(false);
+  const [inboxCounts, setInboxCounts] = useState({ fresh: 0, review: 0 });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    const [en, sOn, nOn, sGr, skip] = await Promise.all([
+    const [en, sOn, nOn, sGr, ac, counts] = await Promise.all([
       isAutofetchEnabled(),
       getMetaValue(META_SMS).then((v: string | null) => v === '1'),
       getMetaValue(META_NOTIF).then((v: string | null) => v === '1'),
       hasSmsPermission(),
-      getMetaValue('af_skip_self_transfers').then((v: string | null) => v !== '0'),
+      getMetaValue(META_AUTOCONFIRM).then((v: string | null) => v === '1'),
+      getLedger().countObservationsByStatus().catch(() => ({ new: 0, needs_review: 0, imported: 0, ignored: 0, duplicate: 0 })),
     ]);
     setEnabled(en);
     setSmsOn(sOn);
     setNotifOn(nOn);
     setSmsGranted(sGr);
-    setSkipSelf(skip);
+    setAutoConfirm(ac);
+    setInboxCounts({ fresh: counts.new, review: counts.needs_review });
     setNotifGranted(hasNotificationAccess());
   }, []);
 
@@ -107,8 +112,9 @@ export default function AutofetchSettings() {
         <Text style={s.eyebrow}>set it and forget it ✦</Text>
         <Text style={[s.h1, { marginTop: 4 }]}>Auto-fetch ⚡</Text>
         <Text style={[s.sub, { marginTop: 8 }]}>
-          When your bank or wallet sends a transaction SMS or push notification, PocketHisaab logs it
-          automatically — no typing, no confirm taps.
+          When your bank or wallet sends a transaction SMS or push notification, PocketHisaab files it
+          into your Import Inbox with a suggested wallet and category. Nothing is posted to your ledger
+          until you confirm it — unless you turn on auto-confirm below.
         </Text>
 
         {!supported && (
@@ -194,23 +200,41 @@ export default function AutofetchSettings() {
           </Text>
         </Card>
 
-        {/* Self-transfers */}
-        <Text style={s.sectionTitle}>Self-transfers</Text>
+        {/* Import inbox */}
+        <Text style={s.sectionTitle}>Import inbox</Text>
+        <Card>
+          <Text style={{ fontSize: 16, fontWeight: '900', color: C.ink }}>
+            {inboxCounts.fresh + inboxCounts.review === 0
+              ? 'All caught up 🎉'
+              : `${inboxCounts.fresh} new · ${inboxCounts.review} need${inboxCounts.review === 1 ? 's' : ''} review`}
+          </Text>
+          <Text style={{ fontSize: 13, color: C.inkSoft, marginTop: 4 }}>
+            Review detected transactions, fix their wallet or category, spot duplicates, and pair
+            your own-account transfers — before anything touches the ledger.
+          </Text>
+          <View style={{ marginTop: 12 }}>
+            <GhostButton title="Open import inbox →" onPress={() => router.push('/import-inbox')} />
+          </View>
+        </Card>
+
+        {/* Import policy */}
+        <Text style={s.sectionTitle}>Import policy</Text>
         <Card>
           <View style={[s.row, { justifyContent: 'space-between' }]}>
             <View style={{ flex: 1, marginRight: 12 }}>
-              <Text style={{ fontSize: 16, fontWeight: '900', color: C.ink }}>Skip my own transfers</Text>
+              <Text style={{ fontSize: 16, fontWeight: '900', color: C.ink }}>Auto-confirm clean imports</Text>
               <Text style={{ fontSize: 13, color: C.inkSoft, marginTop: 4 }}>
-                When you move money between your own accounts (Easypaisa → JazzCash), the send and
-                receive cancel out — neither is logged.
+                Only spotless parses auto-post: completed at the bank, carrying a bank reference, with
+                no possible duplicate. Everything else — including pending or failed transactions and
+                moves between your own accounts — waits in the inbox for your tap.
               </Text>
             </View>
             <Switch
-              value={skipSelf}
+              value={autoConfirm}
               disabled={busy}
               onValueChange={async (v) => {
-                setSkipSelf(v);
-                await setMetaValue('af_skip_self_transfers', v ? '1' : '0');
+                setAutoConfirm(v);
+                await setMetaValue(META_AUTOCONFIRM, v ? '1' : '0');
               }}
               trackColor={{ false: C.line, true: C.emerald }}
             />
@@ -220,9 +244,9 @@ export default function AutofetchSettings() {
         {/* Safety + privacy */}
         <Text style={s.sectionTitle}>How it stays safe</Text>
         <Card>
-          <Bullet text="Only messages matching a known transaction format are logged — anything unclear is skipped, never guessed." />
-          <Bullet text="Every transaction ID is remembered, so nothing is ever added twice." />
-          <Bullet text="Auto-added entries carry a ⚡ tag and stay fully editable and deletable." />
+          <Bullet text="Only messages matching a known transaction format are filed — anything unclear is skipped, never guessed." />
+          <Bullet text="Deduplication is layered (source fingerprint, bank reference, similarity) — ambiguous items ask you first and never merge silently." />
+          <Bullet text="Pending or failed bank transactions are never posted as completed." />
           <Bullet text="Parsing happens 100% on your phone. No message ever leaves the device." />
         </Card>
 

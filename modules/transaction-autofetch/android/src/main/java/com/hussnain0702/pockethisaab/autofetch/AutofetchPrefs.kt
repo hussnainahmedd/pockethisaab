@@ -13,6 +13,12 @@ import android.content.Context
  * - sms_enabled / notif_enabled: channel toggles, synced from the JS
  *   settings UI. Both default to false so nothing is captured until the
  *   user explicitly enables auto-fetch in the app.
+ *
+ * The JS lists are AUTHORITATIVE: the JS service resyncs them on every
+ * app run (syncAllowlists), and setPackages/setSmsSenders REPLACE the
+ * persisted sets. That resync is what delivers list updates (new bank
+ * apps/senders) to installs that enabled auto-fetch under an older app
+ * version — the persisted set must never be treated as frozen.
  */
 object AutofetchPrefs {
   private const val PREFS = "transaction_autofetch"

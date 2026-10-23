@@ -1,28 +1,36 @@
 import { StyleSheet } from 'react-native';
 
 /* ------------------------------------------------------------------ */
-/* Gen Z fintech palette                                               */
+/* Pocket Pop design system (M5)                                       */
+/* Warm paper surfaces, deep green ink, emerald brand, gold coin       */
+/* accent. Single source of truth for every screen — see               */
+/* docs/V2-M5-DESIGN.md for the research and rationale.                */
 /* ------------------------------------------------------------------ */
 
 export const C = {
   // surfaces
-  bg: '#EFF7F2',
+  bg: '#F8F5EC',
   card: '#FFFFFF',
-  ink: '#0A1F16',
-  inkSoft: '#4E625A',
-  inkFaint: '#93A8A0',
-  line: '#DCE9E1',
+  ink: '#101D15',
+  inkSoft: '#57655A',
+  inkFaint: '#A3AC9D',
+  line: '#E8E1CE',
 
-  // brand — emerald → teal → lime
+  // brand — emerald family (continuity with v1)
   emerald: '#0E9F6E',
-  emeraldDark: '#0B6E4E',
-  emeraldDeep: '#07352A',
+  emeraldDark: '#0A6B45',
+  emeraldDeep: '#052E21',
   teal: '#14B8A6',
   lime: '#BEF264',
-  limeSoft: '#F0FBD8',
+  limeSoft: '#F3FBD9',
+
+  // gold coin accent (M5)
+  gold: '#F2B33D',
+  goldDark: '#96690C',
+  goldSoft: '#FCEFC7',
 
   // soft tints
-  emeraldSoft: '#DDF5E7',
+  emeraldSoft: '#DFF5E6',
   red: '#F43F5E',
   redDark: '#BE123C',
   redSoft: '#FFE4E9',
@@ -38,20 +46,23 @@ export const C = {
 
 /* Gradient stops used across the app */
 export const G = {
-  hero: ['#0E9F6E', '#0D9488', '#0B3B2E'] as const, // emerald → teal → deep
+  hero: ['#052E21', '#0A5C40', '#0E9F6E'] as const, // deep ink → emerald
   heroAlt: ['#14B8A6', '#0E9F6E'] as const, // teal → emerald
   limePop: ['#BEF264', '#A3E635'] as const, // lime pop
   money: ['#0E9F6E', '#14B8A6'] as const,
+  gold: ['#F6C453', '#F2B33D'] as const, // coin gold
   danger: ['#F43F5E', '#E11D48'] as const,
   violet: ['#8B5CF6', '#6D28D9'] as const,
-  card: ['#FFFFFF', '#F4FAF6'] as const,
+  card: ['#FFFFFF', '#FBF9F2'] as const,
 };
 
 export const R = 22;
+export const R_LG = 28;
+export const R_SM = 16;
 
 export const s = StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
-  scroll: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 110 },
+  scroll: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 118 },
   h1: { fontSize: 30, fontWeight: '900', color: C.ink, letterSpacing: -0.8 },
   h2: { fontSize: 19, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
   sub: { fontSize: 14, color: C.inkSoft, marginTop: 5, lineHeight: 21 },
@@ -68,8 +79,8 @@ export const s = StyleSheet.create({
     padding: 18,
     borderWidth: 1,
     borderColor: C.line,
-    shadowColor: '#0E9F6E',
-    shadowOpacity: 0.1,
+    shadowColor: '#5C4A12',
+    shadowOpacity: 0.08,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 6 },
     elevation: 3,

@@ -7,14 +7,22 @@
  *  2. SMS inbox scan    — catches anything the receiver missed (e.g. app was
  *     force-stopped) and powers history import.
  *
- * Every candidate goes through: sender/app allowlist → strict template parse
- * → TID/composite dedup → ledger insert with origin='auto'.
+ * M4 flow: every parsed event goes to the v2 IMPORT INBOX
+ * (lib/finance/repository.ts ingestParsedEvent), which applies layered
+ * deduplication and either files it as New, flags it Needs Review /
+ * Duplicate, or — only with the user's auto-confirm opt-in AND a
+ * high-confidence clean parse — posts it to the ledger immediately.
+ * Nothing is posted silently by default, pending/failed parses are
+ * never posted, and the old same-amount self-transfer deletion is gone:
+ * own-account movements are paired as transfers in the inbox instead.
  */
 import { PermissionsAndroid, Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import { addExpense, addIncome, hasSeenAutofetch, markAutofetchSeen, getMetaValue, setMetaValue, findAutoExpenseByAmount, findAutoIncomeByAmount, deleteExpense, deleteIncome } from '../db';
-import { identifySmsSender, notifAppLabel, NOTIF_APP_PACKAGES, SMS_SENDER_PATTERNS } from './senders';
+import { getMetaValue, setMetaValue } from '../db';
+import { identifySmsSender, notifAppLabel, notifInstitutionId, NOTIF_APP_PACKAGES, SMS_SENDER_PATTERNS } from './senders';
 import { parseNotificationBody, parseSmsBody, type ParsedTransaction } from './parser';
+import { getLedger } from '../finance/appLedger';
+import { LedgerRepository } from '../finance/repository';
 import {
   getInboxSms,
   getQueueDirPath,
@@ -30,11 +38,32 @@ export const META_ENABLED = 'af_enabled';
 export const META_SMS = 'af_sms_enabled';
 export const META_NOTIF = 'af_notif_enabled';
 export const META_LAST_SCAN = 'af_last_sms_scan';
+export const META_AUTOCONFIRM = 'af_autoconfirm';
 
 export interface AutofetchResult {
+  /** Transactions posted automatically during this run (opt-in only). */
   added: number;
+  /** Inbox items now waiting for the user's review. */
+  review: number;
   supported: boolean;
   enabled: boolean;
+}
+
+/**
+ * Push the current JS allowlists to the native components. The native
+ * side REPLACES its persisted lists with what JS sends, and it reads
+ * them fresh for every event — so calling this on every run heals
+ * installs whose persisted list predates an app update (the Faysal
+ * DigiBank package added in v1.1.3 never reached already-enabled
+ * installs before this resync existed: M1 finding P0-7).
+ */
+export function syncAllowlists(): void {
+  try {
+    setNotificationPackages(NOTIF_APP_PACKAGES.map((a) => a.pkg));
+    setSmsSenders(SMS_SENDER_PATTERNS);
+  } catch {
+    // ignore — native not present (Expo Go)
+  }
 }
 
 /** Local YYYY-MM-DD for an epoch-ms timestamp (Asia/Karachi = device tz). */
@@ -86,11 +115,7 @@ export async function isAutofetchEnabled(): Promise<boolean> {
 export async function setAutofetchEnabled(on: boolean): Promise<void> {
   await setMetaValue(META_ENABLED, on ? '1' : '0');
   try {
-    if (on) {
-      // Push the allowlists to the native components.
-      setNotificationPackages(NOTIF_APP_PACKAGES.map((a) => a.pkg));
-      setSmsSenders(SMS_SENDER_PATTERNS);
-    }
+    if (on) syncAllowlists();
     // Sync channel toggles so native capture matches the UI state.
     const smsOn = (await getMetaValue(META_SMS)) === '1';
     const notifOn = (await getMetaValue(META_NOTIF)) === '1';
@@ -130,89 +155,59 @@ export async function setNotifChannelEnabled(on: boolean): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Dedup + insert                                                      */
+/* Inbox ingestion (M4)                                                */
 /*                                                                     */
-/* Three layers:                                                       */
-/*  1. TID key — exact transaction reference, strongest signal.         */
-/*  2. Precise fingerprint — bank|amount|direction|date|time|           */
-/*     counterparty|salt. The time (HH:MM) distinguishes two legitimate */
-/*     same-amount transactions on one day, while receiver/inbox copies */
-/*     of one SMS share the same timestamp and still collapse.         */
-/*  3. Cross-channel window keys — coarser bank|amount|direction|date|  */
-/*     counterparty|15-min-bucket keys, checked for the bucket before,  */
-/*     current, and after the event. Catches the same transaction seen  */
-/*     as both an SMS and a push notification (timestamps differ by     */
-/*     seconds/minutes, never share a TID).                            */
+/* Parsed events are handed to the ledger's import engine, which       */
+/* files them in the import inbox with suggestions and a confidence     */
+/* score. Auto-confirmation happens ONLY when the user opted in AND     */
+/* the item is a clean high-confidence parse (bank reference present,   */
+/* no candidates). Everything else waits for the user's review.         */
 /* ------------------------------------------------------------------ */
 
-function hashStr(raw: string): string {
-  let h = 0;
-  for (let i = 0; i < raw.length; i++) h = ((h << 5) - h + raw.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
-}
+type IngestOutcome = 'imported' | 'review' | 'filed' | 'none';
 
-/** HH:MM in device-local time. */
-function timePart(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
+const runStats = { imported: 0, review: 0 };
 
-function normCounterparty(s: string): string {
-  return s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-}
-
-/** All dedup keys for a parsed transaction (without salt for window keys). */
-function dedupKeys(p: ParsedTransaction, salt: string): string[] {
-  if (p.tid) return [`tid:${p.tid}`];
-  const date = isoDateLocal(p.dateMs);
-  const cp = normCounterparty(p.counterparty);
-  const precise = `fp:${hashStr(`${p.bankLabel}|${p.amount}|${p.direction}|${date}|${timePart(p.dateMs)}|${cp}|${salt}`)}`;
-  // 15-minute buckets; check prev/curr/next to straddle boundaries.
-  const bucket = Math.floor(p.dateMs / 900000);
-  const windows = [bucket - 1, bucket, bucket + 1].map(
-    (b) => `wx:${hashStr(`${p.bankLabel}|${p.amount}|${p.direction}|${date}|${cp}|${b}`)}`
-  );
-  return [precise, ...windows];
-}
-
-async function insertIfNew(p: ParsedTransaction, salt: string): Promise<boolean> {
-  const keys = dedupKeys(p, salt);
-  for (const k of keys) {
-    if (await hasSeenAutofetch(k)) return false;
+async function ingestParsed(p: ParsedTransaction, institutionId: string, excerpt: string): Promise<IngestOutcome> {
+  const amountMinor = Math.round(p.amount * 100);
+  if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) return 'none';
+  const ledger = getLedger();
+  const { observation, created } = await ledger.ingestParsedEvent({
+    source: p.channel,
+    institution: p.bankLabel,
+    institutionId,
+    accountHint: p.accountHint,
+    amountMinor,
+    direction: p.direction,
+    counterparty: p.counterparty || null,
+    reference: p.tid,
+    occurredAt: p.dateMs,
+    parseStatus: p.status,
+    categoryKey: p.category,
+    incomeSource: p.incomeSource,
+    excerpt,
+  });
+  if (!created) return 'none'; // the same source event delivered again
+  if (observation.status === 'needs_review') {
+    runStats.review++;
+    return 'review';
   }
-  const date = isoDateLocal(p.dateMs);
-  // Self-transfer detection: money moved between the user's own accounts
-  // (e.g. Easypaisa -> JazzCash) appears as an out+in pair of the same
-  // amount. If we find the matching opposite-direction auto entry from
-  // today, delete it and skip this one — net effect zero, as it should be.
-  const skipSelf = (await getMetaValue('af_skip_self_transfers')) !== '0';
-  if (skipSelf) {
-    if (p.direction === 'in') {
-      const pair = await findAutoExpenseByAmount(p.amount, date);
-      if (pair) {
-        await deleteExpense(pair.id);
-        for (const k of keys) await markAutofetchSeen(k);
-        return false;
-      }
-    } else {
-      const pair = await findAutoIncomeByAmount(p.amount, date);
-      if (pair) {
-        await deleteIncome(pair.id);
-        for (const k of keys) await markAutofetchSeen(k);
-        return false;
+  if (observation.status === 'new') {
+    const autoConfirm = (await getMetaValue(META_AUTOCONFIRM)) === '1';
+    if (autoConfirm && LedgerRepository.autoConfirmEligible(observation)) {
+      try {
+        await ledger.confirmObservation(observation.id);
+        runStats.imported++;
+        return 'imported';
+      } catch {
+        runStats.review++;
+        return 'review';
       }
     }
+    runStats.review++;
+    return 'review';
   }
-  const tag = `⚡ ${p.bankLabel}${p.tid ? ` · TID ${p.tid}` : ''}`;
-  const note = `${tag} · ${p.counterparty}`.slice(0, 140);
-  if (p.direction === 'in') {
-    const source = p.incomeSource === 'Other' ? p.bankLabel : p.incomeSource;
-    await addIncome(source, p.amount, note, date, 'auto');
-  } else {
-    await addExpense(p.amount, p.category, note, date, 'auto');
-  }
-  for (const k of keys) await markAutofetchSeen(k);
-  return true;
+  return 'filed'; // duplicate — filed for visibility, nothing posted
 }
 
 /* ------------------------------------------------------------------ */
@@ -230,38 +225,38 @@ interface QueueEvent {
   postTime?: number;
 }
 
-async function ingestEvent(ev: QueueEvent): Promise<boolean> {
+async function ingestEvent(ev: QueueEvent): Promise<IngestOutcome> {
   try {
     if (ev.type === 'sms' && ev.address && ev.body) {
       const rule = identifySmsSender(ev.address);
-      if (!rule) return false;
+      if (!rule) return 'none';
       const parsed = parseSmsBody(rule, ev.body, ev.date ?? Date.now());
-      if (!parsed) return false;
-      return await insertIfNew(parsed, ev.address);
+      if (!parsed) return 'none';
+      return await ingestParsed(parsed, rule.id, ev.body);
     }
     if (ev.type === 'notification' && ev.packageName) {
       const label = notifAppLabel(ev.packageName);
       const parsed = parseNotificationBody(label, ev.title ?? '', ev.text ?? '', ev.postTime ?? Date.now());
-      if (!parsed) return false;
-      return await insertIfNew(parsed, ev.packageName);
+      if (!parsed) return 'none';
+      return await ingestParsed(parsed, notifInstitutionId(ev.packageName), `${ev.title ?? ''} ${ev.text ?? ''}`);
     }
   } catch (e) {
     console.warn('autofetch: ingest failed', e);
   }
-  return false;
+  return 'none';
 }
 
-async function drainQueue(smsOn: boolean, notifOn: boolean): Promise<number> {
-  let added = 0;
-  if (!smsOn && !notifOn) return 0;
+async function drainQueue(smsOn: boolean, notifOn: boolean): Promise<void> {
+  if (!smsOn && !notifOn) return;
   const qdir = getQueueDirPath();
-  if (!qdir) return 0;
+  if (!qdir) return;
   let files: string[] = [];
   try {
     files = await FileSystem.readDirectoryAsync(qdir);
   } catch {
-    return 0;
+    return;
   }
+  let processed = 0;
   for (const f of files) {
     const path = `${qdir}/${f}`;
     try {
@@ -269,8 +264,8 @@ async function drainQueue(smsOn: boolean, notifOn: boolean): Promise<number> {
       const ev = JSON.parse(raw) as QueueEvent;
       if ((ev.type === 'sms' && !smsOn) || (ev.type === 'notification' && !notifOn)) {
         // Channel is off — drop the event.
-      } else if (await ingestEvent(ev)) {
-        added++;
+      } else {
+        await ingestEvent(ev);
       }
     } catch {
       // corrupt file — drop it
@@ -280,21 +275,19 @@ async function drainQueue(smsOn: boolean, notifOn: boolean): Promise<number> {
     } catch {
       // ignore
     }
-    if (added > 2000) break; // sanity cap
+    if (++processed > 2000) break; // sanity cap
   }
-  return added;
 }
 
-async function scanInbox(): Promise<number> {
-  let added = 0;
-  if (!(await hasSmsPermission())) return 0;
+async function scanInbox(): Promise<void> {
+  if (!(await hasSmsPermission())) return;
   const since = Number((await getMetaValue(META_LAST_SCAN)) || '0');
   let msgs: { address: string; body: string; date: number }[] = [];
   try {
     msgs = await getInboxSms(since, 500);
   } catch (e) {
     console.warn('autofetch: inbox scan failed', e);
-    return 0;
+    return;
   }
   for (const m of msgs) {
     try {
@@ -302,13 +295,12 @@ async function scanInbox(): Promise<number> {
       if (!rule) continue;
       const parsed = parseSmsBody(rule, m.body, m.date);
       if (!parsed) continue;
-      if (await insertIfNew(parsed, m.address)) added++;
+      await ingestParsed(parsed, rule.id, m.body);
     } catch {
       // one bad message never breaks the scan
     }
   }
   await setMetaValue(META_LAST_SCAN, String(Date.now()));
-  return added;
 }
 
 /* ------------------------------------------------------------------ */
@@ -318,19 +310,26 @@ async function scanInbox(): Promise<number> {
 let running = false;
 
 export async function runAutofetch(): Promise<AutofetchResult> {
-  const idle: AutofetchResult = { added: 0, supported: false, enabled: false };
+  const idle: AutofetchResult = { added: 0, review: 0, supported: false, enabled: false };
   try {
     if (Platform.OS !== 'android' || !isAutofetchNativeAvailable()) return idle;
     idle.supported = true;
+    // Heal persisted native allowlists on every run (P0-7): packages or
+    // senders added by an app update reach already-enabled installs.
+    syncAllowlists();
     if ((await getMetaValue(META_ENABLED)) !== '1') return idle;
     idle.enabled = true;
     if (running) return idle;
     running = true;
+    runStats.imported = 0;
+    runStats.review = 0;
     try {
       const smsOn = (await getMetaValue(META_SMS)) === '1';
       const notifOn = (await getMetaValue(META_NOTIF)) === '1';
-      idle.added += await drainQueue(smsOn, notifOn);
-      if (smsOn) idle.added += await scanInbox();
+      await drainQueue(smsOn, notifOn);
+      if (smsOn) await scanInbox();
+      idle.added = runStats.imported;
+      idle.review = runStats.review;
     } finally {
       running = false;
     }

@@ -9,12 +9,13 @@
     "plugins": [
       "expo-router",
       "expo-status-bar",
-      "./modules/transaction-autofetch/app.plugin.js"
+      "./modules/transaction-autofetch/app.plugin.js",
+      "expo-sharing"
     ],
     "scheme": "pockethisaab",
     "slug": "pockethisaab",
     "userInterfaceStyle": "light",
-    "version": "1.1.3",
+    "version": "2.0.0",
     "icon": "./assets/icon.png",
     "web": {
       "bundler": "metro"
@@ -29,10 +30,10 @@
     "android": {
       "package": "com.hussnain0702.pockethisaab",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#0B7A55"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#052E21"
       },
-      "versionCode": 6
+      "versionCode": 7
     }
   }
 }

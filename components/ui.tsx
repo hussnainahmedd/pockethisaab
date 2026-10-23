@@ -66,7 +66,7 @@ export function HeroCard({
         style,
       ]}
     >
-      {/* lime glow blob */}
+      {/* soft lime glow blob */}
       <View
         style={{
           position: 'absolute',
@@ -76,9 +76,27 @@ export function HeroCard({
           height: 150,
           borderRadius: 75,
           backgroundColor: C.lime,
-          opacity: 0.28,
+          opacity: 0.22,
         }}
       />
+      {/* gold coin motif — the Pocket Coin (M5 brand mark) */}
+      <View
+        style={{
+          position: 'absolute',
+          top: 18,
+          right: 18,
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: C.gold,
+          borderWidth: 3,
+          borderColor: 'rgba(255,255,255,0.85)',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text style={{ fontSize: 19, fontWeight: '900', color: C.emeraldDeep }}>₨</Text>
+      </View>
       <Text style={styles.heroEyebrow}>{eyebrow}</Text>
       <Text style={[styles.heroValue, { color: valueColor }]}>{value}</Text>
       {sub ? <Text style={[styles.heroSub, { color: subColor }]}>{sub}</Text> : null}
@@ -176,7 +194,7 @@ const TONES = {
   green: { fg: C.emeraldDark, bg: C.emeraldSoft },
   red: { fg: C.redDark, bg: C.redSoft },
   amber: { fg: C.amberDark, bg: C.amberSoft },
-  neutral: { fg: C.ink, bg: '#EAF3EE' },
+  neutral: { fg: C.ink, bg: '#F1EDDF' },
   violet: { fg: '#6D28D9', bg: C.violetSoft },
   sky: { fg: '#0369A1', bg: C.skySoft },
 } as const;
@@ -225,7 +243,11 @@ export function Chip({
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.chip, selected && { backgroundColor: C.ink, borderColor: C.ink }]}
+      style={({ pressed }) => [
+        styles.chip,
+        selected && { backgroundColor: C.ink, borderColor: C.ink },
+        pressed && { transform: [{ scale: 0.96 }] },
+      ]}
     >
       <Text style={[styles.chipText, selected && { color: '#fff' }]}>
         {emoji ? `${emoji} ` : ''}
@@ -237,7 +259,7 @@ export function Chip({
 
 const styles = StyleSheet.create({
   primary: {
-    borderRadius: 18,
+    borderRadius: 20,
     paddingVertical: 16,
     alignItems: 'center',
     marginTop: 6,
@@ -249,7 +271,7 @@ const styles = StyleSheet.create({
   },
   primaryText: { color: '#fff', fontSize: 16.5, fontWeight: '800', letterSpacing: 0.2 },
   ghost: {
-    borderRadius: 18,
+    borderRadius: 20,
     paddingVertical: 15,
     alignItems: 'center',
     borderWidth: 1.5,
@@ -259,7 +281,7 @@ const styles = StyleSheet.create({
   ghostText: { color: C.ink, fontSize: 15, fontWeight: '700' },
   label: { fontSize: 13, fontWeight: '700', color: C.inkSoft, marginBottom: 7 },
   input: {
-    backgroundColor: '#fff',
+    backgroundColor: '#FFFDF6',
     borderWidth: 1.5,
     borderColor: C.line,
     borderRadius: 16,
@@ -273,12 +295,12 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    backgroundColor: C.limeSoft,
+    backgroundColor: C.goldSoft,
     borderWidth: 1.5,
-    borderColor: '#D9F2A8',
+    borderColor: '#F3D98B',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#A3E635',
+    shadowColor: '#F2B33D',
     shadowOpacity: 0.35,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
@@ -301,7 +323,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   chipText: { fontSize: 13.5, fontWeight: '700', color: C.ink },
-  heroEyebrow: { fontSize: 12, fontWeight: '800', letterSpacing: 2, color: C.lime, textTransform: 'uppercase' },
+  heroEyebrow: { fontSize: 12, fontWeight: '800', letterSpacing: 2, color: C.gold, textTransform: 'uppercase' },
   heroValue: { fontSize: 42, fontWeight: '900', marginTop: 8, fontVariant: ['tabular-nums'], letterSpacing: -1 },
   heroSub: { fontSize: 13, marginTop: 10, lineHeight: 19 },
 });
