@@ -63,15 +63,22 @@ app best-practice roundups).
   gold-active) replaces the flat white tab bar; every scroll surface
   already clears it with ≥110 bottom padding.
 
-## 4. Original logo — "Pocket Coin"
+## 4. Branding — owner-provided final assets (supersede the drawn mark)
 
-Original mark drawn programmatically (Python/PIL, no third-party
-assets): a white pocket outline — the universal "pocket" PocketHisaab
-is named for — with a gold coin stamped `₨` dropping into it, on a
-deep-emerald field. The coin is the money; the pocket is the app; the
-gesture is the product (money, kept). Geometry: rounded-rectangle
-pocket with a curved mouth, circle coin with an inner ring, bold ₨
-glyph (DejaVu Sans Bold, an open font). Delivered as `assets/icon.png`
-(1024×1024, full-bleed) and `assets/adaptive-icon.png` (transparent
-foreground, mark inside the Android safe zone); the adaptive
-background is the deep brand green `#052E21`.
+M5 first shipped an original "Pocket Coin" mark drawn programmatically
+(pocket outline + gold ₨ coin, `tools/make_logo.py`). On 2026-10-24
+the owner replaced it with his own provided assets, which are the
+final branding for v2.0.0:
+
+- **App icon:** the owner's animated-SVG logo (PocketHisaab khata
+  board, Rs coin, "Pocket Expense • Khata • Udhaar"), rendered to
+  1024×1024 PNG (`assets/icon.png`) and an adaptive foreground
+  (`assets/adaptive-icon.png`, adaptive background `#010805`).
+  Android icons are static, so the icon is a rendered frame of his
+  animated logo; the artwork itself is unchanged.
+- **Floating Home badge:** the owner's neon wallet artwork
+  (`assets/floating-wallet.png`, byte-identical to the provided file)
+  floats continuously above the tab dock on the Home screen
+  (`components/FloatingLogo.tsx`) — native-driver bob + breathing
+  scale, gold ring and emerald glow as the theme grading. The artwork
+  pixels are untouched.

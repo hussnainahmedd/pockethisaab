@@ -31,7 +31,7 @@
       "package": "com.hussnain0702.pockethisaab",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#052E21"
+        "backgroundColor": "#010805"
       },
       "versionCode": 7
     }

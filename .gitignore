@@ -1,8 +1,0 @@
-node_modules/
-.expo/
-dist/
-*.log
-.DS_Store
-
-# finance test build output
-tests/.build/

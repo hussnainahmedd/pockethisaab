@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { C, s } from '../../components/theme';
 import { Card, EmptyState, PrimaryButton, GhostButton, HeroCard, StatTile } from '../../components/ui';
+import FloatingLogo from '../../components/FloatingLogo';
 import { getDashboardSummary, getRecentActivity, type ActivityItem, type DashboardSummary } from '../../lib/db';
 import { isAutofetchEnabled } from '../../lib/autofetch/service';
 import { formatRs, formatSignedRs, prettyDate } from '../../lib/format';
@@ -285,6 +286,9 @@ export default function Home() {
           </View>
         </View>
       </Modal>
+
+      {/* Owner-provided brand artwork — continuously floating badge */}
+      <FloatingLogo />
     </SafeAreaView>
   );
 }
