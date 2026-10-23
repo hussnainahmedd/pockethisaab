@@ -1,0 +1,4 @@
+tests/.build
+tools
+*.md
+docs
