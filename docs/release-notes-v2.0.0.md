@@ -29,4 +29,5 @@ PocketHisaab has been rebuilt from the inside: a real accounting engine under th
 ### Verification
 - 95 automated tests pass (accounting, CRUD, udhaar, import dedup, parser fixtures, backup round-trip).
 - TypeScript and Expo configuration checks pass.
-- Signed with the same certificate as previous releases — installs as an update and keeps your data.
+- Signed with the same certificate as previous releases, so Android installs it as an update.
+- **Fresh start:** v2.0.0 is a totally new ledger — previous v1 records are NOT carried over (the old record tables are wiped on first launch, and v2 starts at zero). From v2.0.0 onward, your data is kept across updates as usual.

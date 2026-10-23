@@ -132,6 +132,36 @@ export async function initDatabase(): Promise<void> {
   await ensureEncryption();
 }
 
+/**
+ * V2 FRESH START (owner directive, 2026-10-24): PocketHisaab v2 is a
+ * totally new ledger — NO v1 records are carried over. The v2 ledger
+ * lives in its own database file and starts at zero; this one-time
+ * purge additionally wipes the v1 record tables (income / expenses /
+ * udhaar) on the first v2 launch, so no previous records remain
+ * anywhere in the app. Auto-fetch settings and the dedup seen-store
+ * are preferences/memory, not records, and are deliberately kept.
+ *
+ * Fail-safe by design (the v1.0.4 lesson): any failure leaves the data
+ * exactly as it was and never blocks startup.
+ */
+export async function purgeLegacyRecordsOnce(): Promise<void> {
+  try {
+    const database = getDb();
+    const flag = await database.getFirstAsync<{ value: string }>(
+      "SELECT value FROM meta WHERE key = 'legacy_purged_v2'",
+    );
+    if (flag?.value === '1') return;
+    await database.execAsync(`
+      DELETE FROM income;
+      DELETE FROM expenses;
+      DELETE FROM udhaar;
+      INSERT OR REPLACE INTO meta (key, value) VALUES ('legacy_purged_v2', '1');
+    `);
+  } catch {
+    // Never block startup on the purge — worst case it retries next launch.
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Encryption migration (one-time, v1)                                  */
 /*                                                                      */

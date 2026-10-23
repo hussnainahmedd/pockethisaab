@@ -34,6 +34,7 @@ import {
   hasSeenAutofetch,
   initDatabase as initLegacyDatabase,
   markAutofetchSeen,
+  purgeLegacyRecordsOnce,
   setMetaValue,
   type ActivityItem,
   type CategoryKey,
@@ -69,11 +70,14 @@ export { categoryEmoji } from './legacyDb';
 
 /* ------------------------------------------------------------------ */
 /* Init: legacy meta store (settings/update state) + v2 ledger.        */
-/* Neither step deletes anything.                                      */
+/* The v2 ledger starts empty by design; on the first v2 launch the    */
+/* legacy v1 record tables are purged (owner's fresh-start directive)  */
+/* — the purge is fail-safe and never blocks startup.                  */
 /* ------------------------------------------------------------------ */
 
 export async function initDatabase(): Promise<void> {
   await initLegacyDatabase();
+  await purgeLegacyRecordsOnce();
   await getLedger().init();
 }
 
